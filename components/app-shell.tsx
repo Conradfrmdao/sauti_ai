@@ -5,7 +5,13 @@ import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { getInitials } from "@/lib/identity";
 
 export async function AppShell({ children }: { children: ReactNode }) {
-  const { user, profile } = await requireCitizenWorkspace();
+  const { supabase, user, profile } = await requireCitizenWorkspace();
+  const { count: attentionCount } = await supabase
+    .from("reports")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("source", "text")
+    .in("status", ["draft", "pending_confirmation"]);
 
   const name = profile?.full_name?.trim() ||
     (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") ||
@@ -13,7 +19,10 @@ export async function AppShell({ children }: { children: ReactNode }) {
     "Citizen";
 
   return (
-    <AppShellClient identity={{ name, role: "Citizen account", initials: getInitials(name) }}>
+    <AppShellClient
+      attentionCount={attentionCount ?? 0}
+      identity={{ name, role: "Citizen account", initials: getInitials(name) }}
+    >
       {children}
     </AppShellClient>
   );

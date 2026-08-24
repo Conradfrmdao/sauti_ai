@@ -55,7 +55,12 @@ function NavigationPendingHint() {
   return <span className={`navigation-pending ${pending ? "is-pending" : ""}`} aria-hidden="true" />;
 }
 
-function NavigationLinks({ pathname }: { pathname: string }) {
+function AttentionBadge({ count }: { count: number }) {
+  if (count < 1) return null;
+  return <span className="attention-badge" aria-label={`${count} draft ${count === 1 ? "report needs" : "reports need"} attention`}>{count > 99 ? "99+" : count}</span>;
+}
+
+function NavigationLinks({ pathname, attentionCount }: { pathname: string; attentionCount: number }) {
   return (
     <>
       <div className="nav-section">Citizen</div>
@@ -63,6 +68,7 @@ function NavigationLinks({ pathname }: { pathname: string }) {
         <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
           <Icon size={18} strokeWidth={1.85} />
           <span>{label}</span>
+          {href === "/reports" && <AttentionBadge count={attentionCount} />}
           <NavigationPendingHint />
         </Link>
       ))}
@@ -72,6 +78,7 @@ function NavigationLinks({ pathname }: { pathname: string }) {
         <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
           <Icon size={18} strokeWidth={1.85} />
           <span>{label}</span>
+          {href === "/notifications" && <AttentionBadge count={attentionCount} />}
           <NavigationPendingHint />
         </Link>
       ))}
@@ -79,18 +86,28 @@ function NavigationLinks({ pathname }: { pathname: string }) {
   );
 }
 
-export function AppShellClient({ children, identity }: { children: ReactNode; identity: Identity }) {
+export function AppShellClient({ children, identity, attentionCount: initialAttentionCount }: { children: ReactNode; identity: Identity; attentionCount: number }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [attentionCount, setAttentionCount] = useState(initialAttentionCount);
 
   useEffect(() => setMoreOpen(false), [pathname]);
+  useEffect(() => setAttentionCount(initialAttentionCount), [initialAttentionCount]);
+  useEffect(() => {
+    const updateAttention = (event: Event) => {
+      const delta = Number((event as CustomEvent<{ delta?: number }>).detail?.delta ?? 0);
+      setAttentionCount((count) => Math.max(0, count + delta));
+    };
+    window.addEventListener("sauti1:attention-change", updateAttention);
+    return () => window.removeEventListener("sauti1:attention-change", updateAttention);
+  }, []);
 
   return (
     <div className="shell">
       <div className="app-grid">
         <aside className="sidebar">
           <Link href="/dashboard" className="brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
-          <NavigationLinks pathname={pathname} />
+          <NavigationLinks attentionCount={attentionCount} pathname={pathname} />
           <AccountMenu name={identity.name} role={identity.role} initials={identity.initials} />
         </aside>
 
@@ -100,6 +117,7 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
             <div className="mobile-topbar-actions">
               <Link className="mobile-topbar-button" href="/notifications" aria-label="Notifications" title="Notifications">
                 <Bell size={19} />
+                <AttentionBadge count={attentionCount} />
               </Link>
               <button className="mobile-topbar-button" aria-expanded={moreOpen} aria-label={moreOpen ? "Close account menu" : "Open account menu"} onClick={() => setMoreOpen((open) => !open)} type="button">
                 {moreOpen ? <X size={19} /> : <UserRound size={19} />}
@@ -123,6 +141,7 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
                     <Link className={`mobile-more-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
                       <Icon size={18} strokeWidth={1.85} />
                       <span>{label}</span>
+                      {href === "/notifications" && <AttentionBadge count={attentionCount} />}
                       <NavigationPendingHint />
                     </Link>
                   ))}
@@ -150,6 +169,7 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
                 >
                   <span className="mobile-tab-icon"><Icon size={primary ? 20 : 19} strokeWidth={primary ? 2 : 1.9} /></span>
                   <span>{label}</span>
+                  {href === "/reports" && <AttentionBadge count={attentionCount} />}
                   <NavigationPendingHint />
                 </Link>
               );

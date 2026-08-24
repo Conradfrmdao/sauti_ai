@@ -14,36 +14,52 @@ function titleFromCategory(category: string | null) {
     .replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
-export default async function ChatPage({ searchParams }: { searchParams: Promise<{ prompt?: string | string[] }> }) {
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export default async function ChatPage({ searchParams }: { searchParams: Promise<{ prompt?: string | string[]; resume?: string | string[] }> }) {
   const resolvedSearchParams = await searchParams;
   const promptParam = resolvedSearchParams.prompt;
-  const initialPrompt = typeof promptParam === "string" ? promptParam.slice(0, 4000) : undefined;
+  const resumeParam = resolvedSearchParams.resume;
+  const requestedReportId = typeof resumeParam === "string" && uuidPattern.test(resumeParam)
+    ? resumeParam
+    : undefined;
+  const initialPrompt = !requestedReportId && typeof promptParam === "string"
+    ? promptParam.slice(0, 4000)
+    : undefined;
   const { supabase, user, profile: citizenProfile } = await requireCitizenWorkspace();
-  const { data: conversationRows } = await supabase
-    .from("conversations")
-    .select("id, channel, reports(status)")
-    .eq("user_id", user.id)
-    .eq("channel", "text")
-    .eq("status", "active")
-    .order("updated_at", { ascending: false })
-    .limit(10);
+  let conversation: { id: string } | undefined;
 
-  const activeConversations = conversationRows ?? [];
-  const staleConversationIds = activeConversations
-    .filter((item) => (item.reports ?? []).some((report) => !["draft", "pending_confirmation"].includes(report.status)))
-    .map((item) => item.id);
+  if (requestedReportId) {
+    const { data: resumableReport } = await supabase
+      .from("reports")
+      .select("conversation_id")
+      .eq("id", requestedReportId)
+      .eq("user_id", user.id)
+      .eq("source", "text")
+      .in("status", ["draft", "pending_confirmation"])
+      .maybeSingle();
 
-  if (staleConversationIds.length) {
+    if (resumableReport?.conversation_id) {
+      const { data: resumedConversation } = await supabase
+        .from("conversations")
+        .update({ status: "active", ended_at: null })
+        .eq("id", resumableReport.conversation_id)
+        .eq("user_id", user.id)
+        .eq("channel", "text")
+        .select("id")
+        .maybeSingle();
+      conversation = resumedConversation ?? undefined;
+    }
+  }
+
+  if (!conversation) {
     await supabase
       .from("conversations")
       .update({ status: "closed", ended_at: new Date().toISOString() })
       .eq("user_id", user.id)
-      .in("id", staleConversationIds);
+      .eq("channel", "text")
+      .eq("status", "active");
   }
-
-  const conversation = activeConversations.find((item) =>
-    !staleConversationIds.includes(item.id)
-  );
 
   let initialMessages: ChatMessage[] | undefined;
   let initialReportId: string | undefined;
@@ -73,6 +89,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
             ticket_events (event_type, note, created_at)
           )
         `)
+        .eq("id", requestedReportId as string)
         .eq("conversation_id", conversation.id)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
@@ -126,7 +143,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
         intakeData: visibleIntakeData(intakeData),
         missingFields,
         needsFollowUp: !institution || missingFields.length > 0,
-        readyToConfirm: report.status === "pending_confirmation" && Boolean(institution) && missingFields.length === 0,
+        readyToConfirm: Boolean(institution) && missingFields.length === 0,
       };
 
       if (["draft", "pending_confirmation"].includes(report.status)) {

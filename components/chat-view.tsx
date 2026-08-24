@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, FileText, Image, MessageSquarePlus, Paperclip, Send, X } from "lucide-react";
+import { CheckCircle2, FileCheck2, FileText, Image, MessageSquarePlus, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import {
   ChangeEvent,
   FormEvent,
@@ -76,6 +76,47 @@ function relatedRecord<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+const hiddenIntakeFields = new Set([
+  "location",
+  "incident_description",
+  "document_issue",
+  "location_verification",
+  "location_source_url",
+  "current_location_verification",
+  "current_location_source_url",
+  "current_location_latitude",
+  "current_location_longitude",
+]);
+
+function ReportReview({ preview }: { preview: ReportPreview }) {
+  const intakeFacts = Object.entries(preview.intakeData ?? {})
+    .filter(([key]) => !hiddenIntakeFields.has(key));
+
+  return (
+    <div className="mobile-report-review">
+      <div className="mobile-review-heading">
+        <span><FileCheck2 size={17} /></span>
+        <div><small>Ready for your review</small><strong>{preview.title}</strong></div>
+      </div>
+      <p>{preview.summary || preview.description}</p>
+      <dl>
+        <div><dt>Institution</dt><dd>{preview.institutionName}</dd></div>
+        <div><dt>Category</dt><dd>{statusLabel(preview.category)}</dd></div>
+        <div><dt>Priority</dt><dd>{statusLabel(preview.priority)}</dd></div>
+        {preview.locationText && <div><dt>Location</dt><dd>{preview.locationText}</dd></div>}
+        {intakeFacts.map(([key, value]) => (
+          <div key={key}><dt>{intakeFieldLabel(key)}</dt><dd>{value}</dd></div>
+        ))}
+      </dl>
+      <small className="mobile-review-note">Nothing is submitted until you confirm.</small>
+    </div>
+  );
+}
+
+function changeAttentionCount(delta: number) {
+  window.dispatchEvent(new CustomEvent("sauti1:attention-change", { detail: { delta } }));
+}
+
 export function ChatView({
   initialMessages,
   initialConversationId,
@@ -98,7 +139,10 @@ export function ChatView({
   const [uploading, setUploading] = useState(false);
   const [pending, setPending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelConfirming, setCancelConfirming] = useState(false);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const inputRef = useRef<HTMLInputElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -163,6 +207,7 @@ export function ChatView({
     setPending(true);
     setUploading(filesToUpload.length > 0);
     setError(undefined);
+    setNotice(undefined);
     setMessages((current) => [...current, { role: "user", text: messageText }]);
 
     try {
@@ -184,6 +229,7 @@ export function ChatView({
 
       setConversationId(payload.conversationId);
       if (payload.report) {
+        if (!activeReportId && payload.reportId) changeAttentionCount(1);
         setReportId(payload.reportId);
         setPreview(payload.report);
         setTicket(undefined);
@@ -238,6 +284,7 @@ export function ChatView({
       }
 
       const routedTicket = payload.ticket as RoutedTicket;
+      changeAttentionCount(-1);
       setTicket(routedTicket);
       setChatClosed(true);
       setConversationId(undefined);
@@ -260,7 +307,7 @@ export function ChatView({
     }
   }
 
-  function startNewChat() {
+  function startNewChat(nextNotice?: string) {
     setMessages([welcomeMessage]);
     setInput("");
     setConversationId(undefined);
@@ -269,10 +316,35 @@ export function ChatView({
     setTicket(undefined);
     setAttachments([]);
     setError(undefined);
+    setNotice(nextNotice);
+    setCancelConfirming(false);
     setChatClosed(false);
     announcedAcknowledgement.current = false;
     announcedTicketStatus.current = undefined;
     window.setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  async function discardDraft() {
+    if (!conversationId || cancelling) return;
+    const hadReport = Boolean(reportId);
+    setCancelling(true);
+    setError(undefined);
+
+    try {
+      const response = await fetch("/api/sauti1/cancel-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "This draft could not be discarded.");
+      if (hadReport) changeAttentionCount(-1);
+      startNewChat("Draft discarded. You can start a new report whenever you are ready.");
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "This draft could not be discarded.");
+    } finally {
+      setCancelling(false);
+    }
   }
 
   useEffect(() => {
@@ -352,7 +424,24 @@ export function ChatView({
           </p>
         </header>
 
+        {notice && <div className="chat-notice" role="status">{notice}</div>}
         {error && <div className="chat-error" role="alert">{error}</div>}
+
+        {reportId && !ticket && (
+          <div className="chat-draft-toolbar">
+            <span><CheckCircle2 size={15} /> Draft saved automatically</span>
+            <button disabled={cancelling} onClick={() => setCancelConfirming(true)} type="button"><Trash2 size={15} /> Discard</button>
+          </div>
+        )}
+        {cancelConfirming && reportId && !ticket && (
+          <div className="discard-confirmation" role="alert">
+            <div><strong>Discard this draft?</strong><span>The conversation and attached evidence will be permanently removed.</span></div>
+            <div>
+              <button className="pill-action" disabled={cancelling} onClick={() => setCancelConfirming(false)} type="button">Keep draft</button>
+              <button className="pill-action danger" disabled={cancelling} onClick={() => void discardDraft()} type="button">{cancelling ? "Discarding..." : "Discard draft"}</button>
+            </div>
+          </div>
+        )}
 
         <div className="chat-thread" aria-live="polite">
           {messages.map((message, index) => (
@@ -362,14 +451,20 @@ export function ChatView({
                 {message.text}
 
                 {preview && !ticket && preview.readyToConfirm && index === messages.length - 1 && message.role === "assistant" && (
-                  <div className="confirm-row">
-                    <button className="pill-action primary" disabled={submitting} onClick={confirmReport} type="button">
-                      {submitting ? "Submitting..." : "Confirm and submit"}
-                    </button>
-                    <button className="pill-action" onClick={() => inputRef.current?.focus()} type="button">
-                      Change or add details
-                    </button>
-                  </div>
+                  <>
+                    <ReportReview preview={preview} />
+                    <div className="confirm-row">
+                      <button className="pill-action primary" disabled={submitting} onClick={confirmReport} type="button">
+                        <CheckCircle2 size={15} /> {submitting ? "Submitting..." : "Confirm and submit"}
+                      </button>
+                      <button className="pill-action" onClick={() => inputRef.current?.focus()} type="button">
+                        <Pencil size={15} /> Change details
+                      </button>
+                      <button className="pill-action danger" onClick={() => setCancelConfirming(true)} type="button">
+                        <Trash2 size={15} /> Discard
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -390,7 +485,7 @@ export function ChatView({
               <strong>Report submitted</strong>
               <span>This conversation is now read-only.</span>
             </div>
-            <button className="pill-action primary" onClick={startNewChat} type="button">
+            <button className="pill-action primary" onClick={() => startNewChat()} type="button">
               <MessageSquarePlus size={17} />
               Start new chat
             </button>
@@ -469,17 +564,7 @@ export function ChatView({
               <div className="kv"><span>Location</span><strong>{preview.locationText || "Not required / not provided"}</strong></div>
 
               {Object.entries(preview.intakeData ?? {})
-                .filter(([key]) => ![
-                  "location",
-                  "incident_description",
-                  "document_issue",
-                  "location_verification",
-                  "location_source_url",
-                  "current_location_verification",
-                  "current_location_source_url",
-                  "current_location_latitude",
-                  "current_location_longitude",
-                ].includes(key))
+                .filter(([key]) => !hiddenIntakeFields.has(key))
                 .map(([key, value]) => (
                   <div className="kv" key={key}><span>{intakeFieldLabel(key)}</span><strong>{value}</strong></div>
                 ))}
@@ -512,6 +597,15 @@ export function ChatView({
                   ? "Nothing is submitted until you confirm these details."
                   : "Continue the conversation so Sauti1 can complete the report."}
             </div>
+            {!ticket && (
+              <div className="preview-actions">
+                {preview.readyToConfirm && (
+                  <button className="pill-action primary" disabled={submitting} onClick={confirmReport} type="button"><CheckCircle2 size={15} /> {submitting ? "Submitting..." : "Confirm and submit"}</button>
+                )}
+                <button className="pill-action" onClick={() => inputRef.current?.focus()} type="button"><Pencil size={15} /> Change or add details</button>
+                <button className="pill-action danger" onClick={() => setCancelConfirming(true)} type="button"><Trash2 size={15} /> Discard draft</button>
+              </div>
+            )}
           </>
         ) : (
           <div className="preview-empty">

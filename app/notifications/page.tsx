@@ -1,4 +1,4 @@
-import { Bell, CheckCircle2 } from "lucide-react";
+import { Bell, CheckCircle2, FileClock } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
@@ -6,10 +6,20 @@ import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function NotificationsPage() {
   const { supabase, user } = await requireCitizenWorkspace();
-  const { data: ownedTickets } = await supabase
-    .from("tickets")
-    .select("id, reports!inner(user_id)")
-    .eq("reports.user_id", user.id);
+  const [{ data: ownedTickets }, { data: drafts }] = await Promise.all([
+    supabase
+      .from("tickets")
+      .select("id, reports!inner(user_id)")
+      .eq("reports.user_id", user.id),
+    supabase
+      .from("reports")
+      .select("id, ai_summary, description, detected_category, updated_at")
+      .eq("user_id", user.id)
+      .eq("source", "text")
+      .in("status", ["draft", "pending_confirmation"])
+      .order("updated_at", { ascending: false })
+      .limit(20),
+  ]);
   const ownedTicketIds = (ownedTickets ?? []).map((ticket) => ticket.id);
   const { data: events } = await supabase
     .from("ticket_events")
@@ -25,11 +35,20 @@ export default async function NotificationsPage() {
     <AppShell>
       <div className="simple-page">
         <h1 className="page-title">Notifications</h1>
-        <p className="page-subtitle">Updates from institutions handling your reports.</p>
+        <p className="page-subtitle">Drafts needing attention and updates from institutions handling your reports.</p>
         <div className="notification-list">
-          {(events ?? []).length === 0 ? (
-            <div className="preview-empty">No ticket updates yet.</div>
-          ) : (events ?? []).map((event) => {
+          {(drafts ?? []).map((draft) => (
+            <Link className="notification-attention" href={`/chat?resume=${draft.id}`} key={`draft-${draft.id}`}>
+              <div className="notification-icon"><FileClock size={16} /></div>
+              <div>
+                <strong>Draft report needs your attention</strong>
+                <p>{draft.ai_summary || draft.description || draft.detected_category || "Continue your report with Sauti1."}</p>
+                <span>Continue draft</span>
+              </div>
+            </Link>
+          ))}
+
+          {(events ?? []).map((event) => {
             const ticket = Array.isArray(event.tickets) ? event.tickets[0] : event.tickets;
             const institution = ticket
               ? Array.isArray(ticket.institutions) ? ticket.institutions[0] : ticket.institutions
@@ -43,6 +62,9 @@ export default async function NotificationsPage() {
               </Link>
             );
           })}
+          {(drafts ?? []).length === 0 && (events ?? []).length === 0 && (
+            <div className="preview-empty">Nothing needs your attention right now.</div>
+          )}
         </div>
       </div>
     </AppShell>

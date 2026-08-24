@@ -489,7 +489,7 @@ export async function POST(request: Request) {
       ai_summary: draft.summary,
       detected_category: draft.category,
       priority: draft.priority,
-      status: "pending_confirmation",
+      status: source === "text" ? "draft" : "pending_confirmation",
       source,
       ai_confidence: draft.confidence,
       location_text: draft.locationText,

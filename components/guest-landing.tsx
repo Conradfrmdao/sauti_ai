@@ -47,6 +47,23 @@ const suggestions = [
   "My water meter was stolen",
   "I sent money but it never arrived",
   "There is a dangerous pothole near my home",
+  "We have had no water since Monday",
+  "My Yaka meter stopped working",
+  "I lost my national ID",
+  "My exam results have the wrong name",
+  "A streetlight has been broken for weeks",
+  "There is illegal dumping near our school",
+  "My mobile money account was charged twice",
+  "A power line is hanging dangerously low",
+  "My SIM card was registered without permission",
+  "The road floods whenever it rains",
+  "I need help reporting a missing person",
+  "A health centre turned away an emergency",
+  "My passport application has stalled",
+  "There is sewage flowing into the road",
+  "I received a suspicious message from my bank",
+  "A public bus is operating dangerously",
+  "My land title details appear incorrect",
 ];
 
 export function GuestLanding() {
@@ -55,6 +72,7 @@ export function GuestLanding() {
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
   const [listening, setListening] = useState(false);
+  const [suggestionPage, setSuggestionPage] = useState(0);
   const [error, setError] = useState("");
   const threadEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -64,6 +82,18 @@ export function GuestLanding() {
   }, [messages, pending]);
 
   useEffect(() => () => recognitionRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (messages.length) return;
+    const interval = window.setInterval(() => {
+      setSuggestionPage((page) => (page + 1) % suggestions.length);
+    }, 5600);
+    return () => window.clearInterval(interval);
+  }, [messages.length]);
+
+  const visibleSuggestions = Array.from({ length: 3 }, (_, index) =>
+    suggestions[(suggestionPage * 3 + index) % suggestions.length]
+  );
 
   async function sendMessage(rawMessage: string, speakReply = false) {
     const message = rawMessage.trim();
@@ -169,9 +199,9 @@ export function GuestLanding() {
             <div className="guest-empty">
               <div className="guest-mark" aria-hidden="true"><AudioLines size={24} /></div>
               <h1>What can Sauti1 help with?</h1>
-              <div className="guest-suggestions">
-                {suggestions.map((suggestion) => (
-                  <button key={suggestion} onClick={() => void sendMessage(suggestion)} type="button">
+              <div aria-live="off" className="guest-suggestions" key={suggestionPage}>
+                {visibleSuggestions.map((suggestion, index) => (
+                  <button className={`tone-${index + 1}`} key={suggestion} onClick={() => void sendMessage(suggestion)} type="button">
                     {suggestion}
                   </button>
                 ))}
@@ -208,16 +238,6 @@ export function GuestLanding() {
           )}
           {error && <p className="guest-error" role="alert">{error}</p>}
           <form className="guest-composer" onSubmit={submit}>
-            <button
-              className={`guest-mic ${listening ? "active" : ""}`}
-              type="button"
-              onClick={toggleVoice}
-              disabled={pending}
-              aria-label={listening ? "Stop listening" : "Speak to Sauti1"}
-              title={listening ? "Stop listening" : "Speak to Sauti1"}
-            >
-              {listening ? <MicOff size={20} /> : <Mic size={20} />}
-            </button>
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
@@ -230,7 +250,19 @@ export function GuestLanding() {
               <ArrowUp size={20} />
             </button>
           </form>
-          <p className="guest-privacy">Guest conversations are not saved or submitted.</p>
+          <div className="guest-or" aria-hidden="true"><span>OR</span></div>
+          <button
+            className={`guest-voice-cta ${listening ? "active" : ""}`}
+            type="button"
+            onClick={toggleVoice}
+            disabled={pending}
+          >
+            <span>{listening ? <MicOff size={21} /> : <Mic size={21} />}</span>
+            <div>
+              <strong>{listening ? "Listening..." : "Talk to our AI using your voice"}</strong>
+            </div>
+          </button>
+          <p className="guest-privacy"><strong>Guest conversations are not saved or submitted.</strong> Sign in or create an account to securely submit and track a report.</p>
         </div>
       </main>
     </div>

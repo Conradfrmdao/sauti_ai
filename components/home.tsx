@@ -1,7 +1,6 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  MessageSquareText,
 } from "lucide-react";
 import { TextIcon, VoiceIcon } from "./icons";
 
@@ -123,15 +122,6 @@ export function CitizenHome({
         </div>
       </section>
 
-      <div className="composer">
-        <Link className="composer-main" href="/chat" aria-label="Open Sauti1 text assistant">
-          <span className="circle-btn" aria-hidden="true"><MessageSquareText size={20} /></span>
-          <span className="composer-placeholder">Message Sauti1 AI...</span>
-        </Link>
-        <Link className="circle-btn voice" href="/voice" aria-label="Start Voice Sauti1" title="Start Voice Sauti1">
-          <VoiceIcon />
-        </Link>
-      </div>
     </>
   );
 }

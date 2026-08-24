@@ -103,7 +103,12 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
               <strong className="ticket-code">{ticket.ticket_code}</strong>
               <div className="detail-kv-list"><div><span>Status</span><strong>{label(ticket.status)}</strong></div><div><span>Created</span><strong>{dateTime(ticket.created_at)}</strong></div><div><span>Acknowledged</span><strong>{dateTime(ticket.acknowledged_at)}</strong></div><div><span>Resolved</span><strong>{dateTime(ticket.resolved_at)}</strong></div></div>
               <Link className="detail-action" href={`/track/${ticket.id}`}>Open tracking timeline</Link>
-            </> : <p>This report has not been submitted yet.</p>}</section>
+            </> : <>
+              <p>This report has not been submitted yet.</p>
+              {["draft", "pending_confirmation"].includes(report.status) && report.source === "text" && (
+                <Link className="detail-action" href={`/chat?resume=${report.id}`}>Continue draft in chat</Link>
+              )}
+            </>}</section>
 
             <section className="detail-section"><h2>History</h2><div className="event-timeline">{events.length ? events.map((event) => <div key={event.id}><CheckCircle2 size={15} /><div><strong>{label(event.event_type)}</strong><p>{event.note || `${label(event.from_status)} to ${label(event.to_status)}`}</p><span>{dateTime(event.created_at)}</span></div></div>) : <p>No ticket events yet.</p>}</div></section>
 

@@ -94,6 +94,16 @@ export async function POST(
     );
   }
 
+  const { error: confirmationStateError } = await supabase
+    .from("reports")
+    .update({ status: "pending_confirmation" })
+    .eq("id", reportId)
+    .eq("user_id", user.id)
+    .in("status", ["draft", "pending_confirmation"]);
+  if (confirmationStateError) {
+    return NextResponse.json({ error: confirmationStateError.message }, { status: 409 });
+  }
+
   const {
     data,
     error,
