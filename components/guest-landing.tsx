@@ -77,12 +77,19 @@ export function GuestLanding() {
   const [error, setError] = useState("");
   const threadEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const speechGenerationRef = useRef(0);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
-  useEffect(() => () => recognitionRef.current?.abort(), []);
+  useEffect(() => () => {
+    recognitionRef.current?.abort();
+    speechGenerationRef.current += 1;
+    utteranceRef.current = null;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }, []);
 
   useEffect(() => {
     if (messages.length) return;
@@ -96,10 +103,59 @@ export function GuestLanding() {
     suggestions[(suggestionPage * 3 + index) % suggestions.length]
   );
 
+  function stopSpeech() {
+    speechGenerationRef.current += 1;
+    utteranceRef.current = null;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  }
+
+  function speakAssistantReply(reply: string) {
+    if (!("speechSynthesis" in window)) return;
+    stopSpeech();
+    const generation = speechGenerationRef.current;
+    const sentences = reply.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [reply];
+    const chunks = sentences.reduce<string[]>((items, sentence) => {
+      const text = sentence.trim();
+      const previous = items.at(-1);
+      if (previous && `${previous} ${text}`.length <= 180) {
+        items[items.length - 1] = `${previous} ${text}`;
+      } else if (text) {
+        items.push(text);
+      }
+      return items;
+    }, []);
+
+    const speakChunk = (index: number) => {
+      if (generation !== speechGenerationRef.current || !chunks[index]) return;
+      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+      utterance.lang = "en-UG";
+      utterance.rate = 0.98;
+      utterance.onend = () => {
+        if (utteranceRef.current === utterance) utteranceRef.current = null;
+        speakChunk(index + 1);
+      };
+      utterance.onerror = (event) => {
+        if (utteranceRef.current === utterance) utteranceRef.current = null;
+        if (
+          generation === speechGenerationRef.current &&
+          !["canceled", "interrupted"].includes(event.error)
+        ) {
+          setError("Voice playback stopped. You can read the complete reply above or try voice again.");
+        }
+      };
+      utteranceRef.current = utterance;
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+    };
+
+    speakChunk(0);
+  }
+
   async function sendMessage(rawMessage: string, speakReply = false) {
     const message = rawMessage.trim();
     if (!message || pending) return;
 
+    stopSpeech();
     const history = messages.slice(-10);
     setMessages((current) => [...current, { role: "user", text: message }]);
     setInput("");
@@ -124,13 +180,7 @@ export function GuestLanding() {
       setMessages((current) => [...current, { role: "assistant", text: payload.reply! }]);
       setContext(payload.context);
 
-      if (speakReply && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance(payload.reply);
-        utterance.lang = "en-UG";
-        utterance.rate = 0.98;
-        window.speechSynthesis.speak(utterance);
-      }
+      if (speakReply) speakAssistantReply(payload.reply);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sauti1 could not respond right now.");
     } finally {
@@ -190,8 +240,8 @@ export function GuestLanding() {
           <span className="guest-brand-name">SAUTI<span>1</span><small>AI</small></span>
         </Link>
         <nav className="guest-auth-actions" aria-label="Account">
-          <Link href="/login" className="guest-signin"><LogIn size={16} /> Sign in</Link>
-          <Link href="/login?mode=signup" className="guest-signup"><UserPlus size={16} /> Create account</Link>
+          <Link href="/login" className="guest-signin"><LogIn size={16} /> <span>Sign in</span></Link>
+          <Link href="/login?mode=signup" className="guest-signup" aria-label="Create account"><UserPlus size={16} /><span className="guest-signup-full">Create account</span><span className="guest-signup-short">Create</span></Link>
         </nav>
       </header>
 

@@ -315,6 +315,10 @@ async function run() {
     ["nira nin", "My NIN has a wrong date of birth.", (d) => {
       assert.equal(d.institutionSlug, "nira-uganda");
     }],
+    ["nira lost id shorthand", "I lost my ID.", (d) => {
+      assert.equal(d.institutionSlug, "nira-uganda");
+      assert.equal(d.category, "identity_service");
+    }],
     ["nira birth", "The birth certificate for my child has an error.", (d) => {
       assert.equal(d.institutionSlug, "nira-uganda");
     }],

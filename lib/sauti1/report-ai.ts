@@ -314,6 +314,12 @@ function normalized(value: string) {
 
 function normalizedRoutingText(value: string) {
   return normalized(value)
+    .replace(/\b(?:lost|misplaced|missing|stolen|replace|replacement|renew|renewal|damaged)\s+(?:my\s+|the\s+)?(?:id|identification)(?:\s+card)?\b/g, " national id ")
+    .replace(/\b(?:my|the)\s+(?:id|identification)(?:\s+card)?\s+(?:was|is|got)\s+(?:lost|misplaced|missing|stolen|damaged)\b/g, " national id ")
+    .replace(/\b(?:pot\s*hole|pothol)\b/g, " pothole ")
+    .replace(/\b(?:power cut|lights? (?:are |is )?off)\b/g, " blackout ")
+    .replace(/\b(?:taps? (?:are |is )?dry|water (?:is )?off)\b/g, " no water ")
+    .replace(/\bresult slip\b/g, " pass slip ")
     .replace(/\b(?:break(?:ing)?|broke|broken)\s+(?:in|into)\b/g, " burglary ")
     .replace(/\b(?:burglar|intruder|housebreaker)s?\b/g, " burglary ")
     .replace(/\bthieves\b/g, " theft ")
@@ -481,7 +487,7 @@ function routeFromCatalog(
     );
     if (possibleProviders.length > 1 && !hasNamedProvider) return undefined;
   }
-  if (/\b(?:birth certificate|death registration|national id|nin|identity card)\b/.test(text)) {
+  if (/\b(?:birth certificate|death registration|national id|nin|identity card|identification card|id card)\b/.test(text)) {
     const nira = catalog.find((institution) =>
       /nira|identification|registration|identity/i.test(`${institution.slug} ${institution.name} ${institution.sector}`)
     );
@@ -1772,7 +1778,7 @@ Few-shot behavior examples:\n${JSON.stringify(fewShots)}${locationPrompt}${evide
   try {
     const ai = new GoogleGenAI({ apiKey });
     const interaction = await withTimeout(ai.interactions.create({
-      model: process.env.GEMINI_MODEL || "gemini-3.7-flash",
+      model: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
       store: false,
       system_instruction: systemInstruction,
       input: evidence.length
@@ -1794,7 +1800,7 @@ Few-shot behavior examples:\n${JSON.stringify(fewShots)}${locationPrompt}${evide
         mime_type: "application/json",
         schema: reportSchema,
       }],
-    } as Parameters<typeof ai.interactions.create>[0]), Number(process.env.GEMINI_TURN_TIMEOUT_MS) || (evidence.length ? 20_000 : 15_000));
+    } as Parameters<typeof ai.interactions.create>[0]), Number(process.env.GEMINI_TURN_TIMEOUT_MS) || (evidence.length ? 15_000 : 10_000));
 
     const responseText = (interaction as { output_text?: string; outputText?: string }).output_text ??
       (interaction as { output_text?: string; outputText?: string }).outputText;

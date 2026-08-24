@@ -157,6 +157,7 @@ export function VoiceView({
   const submittingRef = useRef(false);
   const closeAfterReplyRef = useRef(false);
   const submissionTurnCompleteRef = useRef(false);
+  const modelTurnCompleteRef = useRef(false);
   const submissionTimeoutRef = useRef<number | undefined>(undefined);
   const turnAbortRef = useRef<AbortController | undefined>(undefined);
   const ticketPollAbortRef = useRef<AbortController | undefined>(undefined);
@@ -192,6 +193,7 @@ export function VoiceView({
     releaseMicrophone();
     closeAfterReplyRef.current = false;
     submissionTurnCompleteRef.current = false;
+    modelTurnCompleteRef.current = false;
     if (submissionTimeoutRef.current) window.clearTimeout(submissionTimeoutRef.current);
     submissionTimeoutRef.current = undefined;
 
@@ -251,7 +253,17 @@ export function VoiceView({
     outputSourcesRef.current.add(source);
     source.onended = () => {
       outputSourcesRef.current.delete(source);
-      finishSpokenSubmission();
+      if (closeAfterReplyRef.current) {
+        finishSpokenSubmission();
+      } else if (
+        outputSourcesRef.current.size === 0 &&
+        modelTurnCompleteRef.current &&
+        mountedRef.current &&
+        sessionRef.current
+      ) {
+        modelTurnCompleteRef.current = false;
+        setState("listening");
+      }
     };
     source.start(startAt);
     if (mountedRef.current && !closeAfterReplyRef.current) setState("speaking");
@@ -419,6 +431,7 @@ export function VoiceView({
   const handleLiveMessage = useCallback((message: LiveServerMessage) => {
     const content = message.serverContent;
     if (content?.interrupted) {
+      modelTurnCompleteRef.current = false;
       stopOutput();
       if (!closeAfterReplyRef.current) setState("listening");
       setOutputCaption("");
@@ -437,6 +450,7 @@ export function VoiceView({
 
     for (const part of content?.modelTurn?.parts ?? []) {
       if (part.inlineData?.data && part.inlineData.mimeType?.startsWith("audio/")) {
+        modelTurnCompleteRef.current = false;
         void playAudio(part.inlineData.data, part.inlineData.mimeType);
       }
     }
@@ -450,7 +464,10 @@ export function VoiceView({
         submissionTurnCompleteRef.current = true;
         finishSpokenSubmission();
       } else if (outputSourcesRef.current.size === 0) {
+        modelTurnCompleteRef.current = false;
         setState("listening");
+      } else {
+        modelTurnCompleteRef.current = true;
       }
     }
   }, [finishSpokenSubmission, playAudio, processCitizenTurn, stopOutput]);
@@ -682,7 +699,7 @@ export function VoiceView({
       <div className="grid h-full w-full max-w-[1120px] min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
         <section className="flex min-h-0 flex-col items-center overflow-hidden rounded-[8px] border border-[#e3e7ef] bg-white px-4 py-4 sm:px-6">
           <div className="voice-status shrink-0"><span className={`online-dot ${state === "error" ? "!bg-[#d94b45]" : ""}`} />{statusText}</div>
-          <p className="voice-hint shrink-0 text-center">Speak naturally. You can interrupt Sauti1 while it replies.</p>
+          <p className="voice-hint shrink-0 text-center">Speak naturally. Sauti1 will finish each reply before listening for the next detail.</p>
 
           <div className="min-h-0 w-full flex-1 overflow-y-auto px-1">
             <div className={`sauti-core-wrap mx-auto !w-[min(300px,58vw)] ${["listening", "speaking", "processing"].includes(state) ? "is-active" : ""}`} aria-label={statusText}>

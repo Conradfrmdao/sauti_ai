@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { createGuestConversationReply } from "@/lib/sauti1/guest-ai";
 import { guestInstitutionCatalog, guestKnownLocations } from "@/lib/sauti1/guest-catalog";
-import { ReportDraft, understandCitizenMessageDeterministically } from "@/lib/sauti1/report-ai";
+import { ReportDraft, understandCitizenMessage } from "@/lib/sauti1/report-ai";
 
 type GuestTurn = {
   role: "user" | "assistant";
@@ -155,7 +154,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Start a new guest conversation to continue." }, { status: 400 });
   }
 
-  const draft = understandCitizenMessageDeterministically(
+  const draft = await understandCitizenMessage(
+    [...history, { role: "user", text: message }],
     message,
     guestInstitutionCatalog,
     guestKnownLocations,
@@ -165,18 +165,15 @@ export async function POST(request: Request) {
   const accountOnlyQuestion = /(?:name|phone|account|meter|reference|candidate|application|case|person)/i
     .test(nextQuestionField);
   const requiresAccount = draft.readyToConfirm || Boolean(draft.institutionSlug && accountOnlyQuestion);
-  const generatedReply = draft.intent === "conversation" && !requiresAccount
-    ? await createGuestConversationReply(history, message, draft)
-    : { reply: draft.assistantReply, engine: "fallback" as const };
   const assistantReply = requiresAccount
     ? `I understand the issue and can prepare it for ${draft.institutionName}. Sign in to continue securely, submit the report and track its progress.`
-    : generatedReply.reply;
+    : draft.assistantReply;
 
   return NextResponse.json({
     reply: assistantReply,
     intent: draft.intent,
     institutionName: draft.institutionSlug ? draft.institutionName : null,
-    engine: draft.intent === "conversation" ? generatedReply.engine : "catalog",
+    engine: draft.engine,
     context: guestContext(draft),
   }, { headers: { "Cache-Control": "no-store" } });
 }

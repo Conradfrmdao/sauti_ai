@@ -1,4 +1,5 @@
 import {
+  ActivityHandling,
   EndSensitivity,
   GoogleGenAI,
   Modality,
@@ -52,11 +53,12 @@ export async function POST() {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             realtimeInputConfig: {
+              activityHandling: ActivityHandling.NO_INTERRUPTION,
               automaticActivityDetection: {
-                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
-                prefixPaddingMs: 80,
-                silenceDurationMs: 450,
+                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
+                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+                prefixPaddingMs: 300,
+                silenceDurationMs: 650,
               },
             },
             systemInstruction: liveSystemInstruction,

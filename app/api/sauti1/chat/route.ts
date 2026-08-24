@@ -497,6 +497,7 @@ export async function POST(request: Request) {
       longitude: !answeringCurrentLocation && onlinePlace ? onlinePlace.longitude : previousLongitude,
       location_confidence: !answeringCurrentLocation && onlinePlace ? 0.9 : previousLocationConfidence,
       intake_data: draft.intakeData,
+      ...(source === "text" ? { attention_read_at: null } : {}),
     };
 
     if (reportId) {

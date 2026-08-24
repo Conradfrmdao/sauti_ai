@@ -78,6 +78,18 @@ const catalog: InstitutionCatalogItem[] = [
       service("Electricity distribution", "electricity_service", ["electricity", "yaka", "meter"], ["location", "account_or_meter_number"]),
     ],
   },
+  {
+    id: "nira",
+    name: "National Identification and Registration Authority",
+    short_name: "NIRA",
+    slug: "nira-uganda",
+    sector: "Identity and civil registration",
+    description: "National ID, NIN, birth registration and identity corrections.",
+    routing_keywords: ["nira", "nin", "national id", "identity card", "id card", "lost id"],
+    institution_services: [
+      service("Identity and civil registration", "identity_service", ["nin", "national id", "id card", "lost id"], ["service_type"]),
+    ],
+  },
 ];
 
 async function understand(message: string) {
@@ -118,7 +130,12 @@ async function run() {
   assert.equal(meter.institutionSlug, null);
   assert.match(meter.assistantReply, /water meter|electricity|yaka/i);
 
-  console.log("Live Gemini scenarios passed: conversational greeting, burglary routing, blocked-wallet intake, and meter clarification.");
+  const lostId = await understand("I lost my ID.");
+  assert.equal(lostId.engine, "gemini");
+  assert.equal(lostId.institutionSlug, "nira-uganda");
+  assert.equal(lostId.category, "identity_service");
+
+  console.log("Live Gemini scenarios passed: greeting, burglary, blocked wallet, meter clarification, and lost-ID routing.");
 }
 
 void run();

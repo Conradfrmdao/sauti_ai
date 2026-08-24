@@ -37,6 +37,15 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
 
   if (!report) notFound();
 
+  if (report.source === "text" && ["draft", "pending_confirmation"].includes(report.status)) {
+    await supabase
+      .from("reports")
+      .update({ attention_read_at: new Date().toISOString() })
+      .eq("id", report.id)
+      .eq("user_id", user.id)
+      .is("attention_read_at", null);
+  }
+
   const institution = Array.isArray(report.institutions) ? report.institutions[0] : report.institutions;
   const ticket = Array.isArray(report.tickets) ? report.tickets[0] : report.tickets;
   const events = ticket?.ticket_events ?? [];

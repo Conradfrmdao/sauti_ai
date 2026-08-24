@@ -6,6 +6,14 @@ import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function NotificationsPage() {
   const { supabase, user } = await requireCitizenWorkspace();
+  await supabase
+    .from("reports")
+    .update({ attention_read_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .eq("source", "text")
+    .in("status", ["draft", "pending_confirmation"])
+    .is("attention_read_at", null);
+
   const [{ data: ownedTickets }, { data: drafts }] = await Promise.all([
     supabase
       .from("tickets")

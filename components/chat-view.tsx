@@ -117,6 +117,18 @@ function changeAttentionCount(delta: number) {
   window.dispatchEvent(new CustomEvent("sauti1:attention-change", { detail: { delta } }));
 }
 
+async function markDraftRead(reportId: string) {
+  try {
+    await fetch("/api/sauti1/read-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId }),
+    });
+  } catch {
+    // A lost acknowledgement leaves the draft unread for the next visit.
+  }
+}
+
 export function ChatView({
   initialMessages,
   initialConversationId,
@@ -229,7 +241,7 @@ export function ChatView({
 
       setConversationId(payload.conversationId);
       if (payload.report) {
-        if (!activeReportId && payload.reportId) changeAttentionCount(1);
+        if (payload.reportId) void markDraftRead(payload.reportId);
         setReportId(payload.reportId);
         setPreview(payload.report);
         setTicket(undefined);

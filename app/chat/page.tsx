@@ -40,14 +40,23 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       .maybeSingle();
 
     if (resumableReport?.conversation_id) {
-      const { data: resumedConversation } = await supabase
-        .from("conversations")
-        .update({ status: "active", ended_at: null })
-        .eq("id", resumableReport.conversation_id)
-        .eq("user_id", user.id)
-        .eq("channel", "text")
-        .select("id")
-        .maybeSingle();
+      const [{ data: resumedConversation }] = await Promise.all([
+        supabase
+          .from("conversations")
+          .update({ status: "active", ended_at: null })
+          .eq("id", resumableReport.conversation_id)
+          .eq("user_id", user.id)
+          .eq("channel", "text")
+          .select("id")
+          .maybeSingle(),
+        supabase
+          .from("reports")
+          .update({ attention_read_at: new Date().toISOString() })
+          .eq("id", requestedReportId)
+          .eq("user_id", user.id)
+          .eq("source", "text")
+          .in("status", ["draft", "pending_confirmation"]),
+      ]);
       conversation = resumedConversation ?? undefined;
     }
   }
