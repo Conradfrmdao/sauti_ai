@@ -69,7 +69,7 @@ export async function createGuestConversationReply(
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-3.7-flash",
+      model: process.env.GEMINI_GUEST_MODEL || "gemini-3.5-flash-lite",
       contents: prompt,
       config: {
         abortSignal: abortController.signal,
