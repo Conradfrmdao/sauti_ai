@@ -1,10 +1,10 @@
 import { Building2, Clock3, ExternalLink, Mail, MapPin, Phone, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function InstitutionsPage() {
-  const supabase = await createClient();
+  const { supabase } = await requireCitizenWorkspace();
   const { data: institutions, error } = await supabase
     .from("institutions")
     .select(`

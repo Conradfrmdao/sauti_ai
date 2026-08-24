@@ -15,6 +15,11 @@ export async function updateSession(
       request,
     });
 
+  const pathname = request.nextUrl.pathname;
+  if (pathname === "/" || pathname === "/login" || pathname === "/api/sauti1/guest") {
+    return supabaseResponse;
+  }
+
   const supabaseUrl =
     process.env.NEXT_PUBLIC_SUPABASE_URL;
 
@@ -83,7 +88,6 @@ export async function updateSession(
   } = await supabase.auth.getClaims();
 
   const userId = claimsData?.claims?.sub;
-  const pathname = request.nextUrl.pathname;
   const isPublicPath =
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||

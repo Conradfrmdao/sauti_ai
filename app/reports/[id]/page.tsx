@@ -1,11 +1,11 @@
 import { ArrowLeft, CheckCircle2, FileText, Image, MessageSquareText } from "lucide-react";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { intakeFieldLabel } from "@/lib/sauti1/intake-fields";
 import { visibleIntakeData } from "@/lib/sauti1/report-ai";
-import { createClient } from "@/lib/supabase/server";
 
 function label(value: string | null | undefined) {
   return (value || "Not available").replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
@@ -18,9 +18,7 @@ function dateTime(value: string | null | undefined) {
 
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user } = await requireCitizenWorkspace();
   const { data: report } = await supabase
     .from("reports")
     .select(`

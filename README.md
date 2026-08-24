@@ -5,6 +5,7 @@ SAUTI1 AI is a citizen-to-institution reporting platform built for Uganda. Citiz
 ## What it does
 
 - Guided text and live voice reporting
+- Public guest text and browser-voice conversation before sign-up
 - Structured report extraction with citizen corrections
 - Risk-aware follow-up questions and emergency guidance
 - Evidence uploads with private attachment handling
@@ -13,6 +14,7 @@ SAUTI1 AI is a citizen-to-institution reporting platform built for Uganda. Citiz
 - Ticket tracking, notifications, and institution acknowledgements
 - Separate citizen, institution, and platform-admin workspaces
 - Responsive desktop shell and mobile-first bottom navigation
+- Route-prefetched navigation with immediate skeleton loading states
 
 ## Stack
 
@@ -31,6 +33,8 @@ SAUTI1 AI is a citizen-to-institution reporting platform built for Uganda. Citiz
 4. Routing is checked against the institution and service catalogue in Supabase.
 5. The citizen reviews and confirms the report.
 6. SAUTI1 creates a ticket for the matched institution and exposes status updates to the citizen.
+
+Visitors can also try SAUTI1 from the public home screen without creating an account. Guest conversations are stateless, rate-limited, do not accept evidence, and cannot create reports or tickets. The authenticated dashboard is available at `/dashboard`.
 
 Gemini interactions are created with `store: false`. The application keeps its own auditable conversation and report state in Supabase and does not rely on provider-side conversation storage.
 

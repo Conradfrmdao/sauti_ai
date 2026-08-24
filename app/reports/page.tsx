@@ -1,9 +1,8 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 function label(value: string) {
   return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
@@ -19,9 +18,7 @@ function timeLabel(value: string) {
 }
 
 export default async function ReportsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user } = await requireCitizenWorkspace();
   const { data: reports } = await supabase
     .from("reports")
     .select(`

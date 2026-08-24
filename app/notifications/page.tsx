@@ -1,14 +1,11 @@
 import { Bell, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function NotificationsPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user } = await requireCitizenWorkspace();
   const { data: ownedTickets } = await supabase
     .from("tickets")
     .select("id, reports!inner(user_id)")

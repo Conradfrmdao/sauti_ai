@@ -1,9 +1,8 @@
 import { ArrowRight, CheckCircle2, Circle, Clock3 } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 const stages = ["routed", "acknowledged", "in_progress", "resolved"];
 
@@ -12,9 +11,7 @@ function label(value: string) {
 }
 
 export default async function TrackPage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user } = await requireCitizenWorkspace();
   const { data: tickets } = await supabase
     .from("tickets")
     .select(`

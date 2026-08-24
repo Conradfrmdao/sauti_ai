@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-
 import { AppShell } from "@/components/app-shell";
 import {
   ChatMessage,
@@ -7,7 +5,7 @@ import {
   ReportPreview,
   RoutedTicket,
 } from "@/components/chat-view";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { getMissingReportFields, visibleIntakeData } from "@/lib/sauti1/report-ai";
 
 function titleFromCategory(category: string | null) {
@@ -20,15 +18,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   const resolvedSearchParams = await searchParams;
   const promptParam = resolvedSearchParams.prompt;
   const initialPrompt = typeof promptParam === "string" ? promptParam.slice(0, 4000) : undefined;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const { data: citizenProfile } = await supabase
-    .from("profiles")
-    .select("full_name, phone")
-    .eq("id", user.id)
-    .maybeSingle();
-
+  const { supabase, user, profile: citizenProfile } = await requireCitizenWorkspace();
   const { data: conversationRows } = await supabase
     .from("conversations")
     .select("id, channel, reports(status)")

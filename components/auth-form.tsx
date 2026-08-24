@@ -27,10 +27,10 @@ import {
 
 const initialState: AuthState = {};
 
-export function AuthForm() {
+export function AuthForm({ initialMode = "login" }: { initialMode?: "login" | "signup" }) {
   const [mode, setMode] =
     useState<"login" | "signup" | "reset">(
-      "login"
+      initialMode
     );
 
   const [

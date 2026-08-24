@@ -12,7 +12,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
@@ -26,7 +26,7 @@ type Identity = {
 };
 
 const citizenNav = [
-  { href: "/", label: "Home", icon: Home },
+  { href: "/dashboard", label: "Home", icon: Home },
   { href: "/reports", label: "My reports", icon: FileText },
   { href: "/track", label: "Track a ticket", icon: SearchCheck },
   { href: "/explore", label: "Explore issues", icon: Compass },
@@ -39,7 +39,7 @@ const discoverNav = [
 ];
 
 const mobileTabs = [
-  { href: "/", label: "Home", icon: Home },
+  { href: "/dashboard", label: "Home", icon: Home },
   { href: "/reports", label: "Reports", icon: FileText },
   { href: "/chat", label: "Ask", icon: MessageSquareText, primary: true },
   { href: "/track", label: "Track", icon: SearchCheck },
@@ -50,22 +50,29 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
+function NavigationPendingHint() {
+  const { pending } = useLinkStatus();
+  return <span className={`navigation-pending ${pending ? "is-pending" : ""}`} aria-hidden="true" />;
+}
+
 function NavigationLinks({ pathname }: { pathname: string }) {
   return (
     <>
       <div className="nav-section">Citizen</div>
       {citizenNav.map(({ href, label, icon: Icon }) => (
-        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href}>
+        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
           <Icon size={18} strokeWidth={1.85} />
-          {label}
+          <span>{label}</span>
+          <NavigationPendingHint />
         </Link>
       ))}
 
       <div className="nav-section">Discover</div>
       {discoverNav.map(({ href, label, icon: Icon }) => (
-        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href}>
+        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
           <Icon size={18} strokeWidth={1.85} />
-          {label}
+          <span>{label}</span>
+          <NavigationPendingHint />
         </Link>
       ))}
     </>
@@ -82,14 +89,14 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
     <div className="shell">
       <div className="app-grid">
         <aside className="sidebar">
-          <Link href="/" className="brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
+          <Link href="/dashboard" className="brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
           <NavigationLinks pathname={pathname} />
           <AccountMenu name={identity.name} role={identity.role} initials={identity.initials} />
         </aside>
 
         <main className="main">
           <div className="mobile-topbar">
-            <Link href="/" className="mobile-brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
+            <Link href="/dashboard" className="mobile-brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
             <div className="mobile-topbar-actions">
               <Link className="mobile-topbar-button" href="/notifications" aria-label="Notifications" title="Notifications">
                 <Bell size={19} />
@@ -113,9 +120,10 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
                 </div>
                 <nav className="mobile-more-links">
                   {discoverNav.map(({ href, label, icon: Icon }) => (
-                    <Link className={`mobile-more-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href}>
+                    <Link className={`mobile-more-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
                       <Icon size={18} strokeWidth={1.85} />
                       <span>{label}</span>
+                      <NavigationPendingHint />
                     </Link>
                   ))}
                 </nav>
@@ -138,9 +146,11 @@ export function AppShellClient({ children, identity }: { children: ReactNode; id
                   className={`mobile-tab ${active ? "active" : ""} ${primary ? "primary" : ""}`}
                   href={href}
                   key={href}
+                  prefetch
                 >
                   <span className="mobile-tab-icon"><Icon size={primary ? 20 : 19} strokeWidth={primary ? 2 : 1.9} /></span>
                   <span>{label}</span>
+                  <NavigationPendingHint />
                 </Link>
               );
             })}

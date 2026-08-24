@@ -4,7 +4,8 @@ import { AuthForm } from "@/components/auth-form";
 
 import { createClient } from "@/lib/supabase/server";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
+  const { mode } = await searchParams;
   const supabase =
     await createClient();
 
@@ -29,6 +30,6 @@ export default async function LoginPage() {
   }
 
   return (
-    <AuthForm />
+    <AuthForm initialMode={mode === "signup" ? "signup" : "login"} />
   );
 }

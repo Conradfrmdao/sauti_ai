@@ -1,8 +1,8 @@
 import { AppShell } from "@/components/app-shell";
-import { createClient } from "@/lib/supabase/server";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function ExplorePage() {
-  const supabase = await createClient();
+  const { supabase } = await requireCitizenWorkspace();
   const { data: services } = await supabase
     .from("institution_services")
     .select("id, name, description, category_key, institutions(name, short_name, sector)")

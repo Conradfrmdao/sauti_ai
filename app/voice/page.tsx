@@ -1,10 +1,8 @@
-import { redirect } from "next/navigation";
-
 import { AppShell } from "@/components/app-shell";
 import type { ChatMessage, ReportPreview } from "@/components/chat-view";
 import { VoiceView } from "@/components/voice-view";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { enrichReportIntakeData, getMissingReportFields, matchInstitutionService, reportReplacementMessage, reportRequiresLocation, visibleIntakeData } from "@/lib/sauti1/report-ai";
-import { createClient } from "@/lib/supabase/server";
 
 function titleFromCategory(category: string | null) {
   return (category || "Citizen service issue").replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
@@ -20,10 +18,7 @@ function cleanPendingDescription(value: string) {
 }
 
 export default async function VoicePage() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const { data: citizenProfile } = await supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle();
+  const { supabase, user, profile: citizenProfile } = await requireCitizenWorkspace();
 
   const { data: conversations } = await supabase
     .from("conversations")

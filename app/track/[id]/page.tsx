@@ -1,11 +1,11 @@
 import { ArrowLeft, CheckCircle2, Circle } from "lucide-react";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { intakeFieldLabel } from "@/lib/sauti1/intake-fields";
 import { visibleIntakeData } from "@/lib/sauti1/report-ai";
-import { createClient } from "@/lib/supabase/server";
 
 const stages = ["routed", "acknowledged", "in_progress", "resolved"];
 
@@ -20,9 +20,7 @@ function dateTime(value: string | null | undefined) {
 
 export default async function TicketDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  const { supabase, user } = await requireCitizenWorkspace();
   const { data: ticket } = await supabase
     .from("tickets")
     .select(`

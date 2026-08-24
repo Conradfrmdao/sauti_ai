@@ -99,5 +99,5 @@ export default async function AuthRoutePage() {
      DEFAULT = CITIZEN
   ========================================================= */
 
-  redirect("/");
+  redirect("/dashboard");
 }

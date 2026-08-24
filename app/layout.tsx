@@ -1,13 +1,12 @@
 import type { Metadata, Viewport } from "next";
 
 import { SessionBoundary } from "@/components/session-boundary";
-import { createClient } from "@/lib/supabase/server";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SAUTI1 AI",
-  description: "One intelligent gateway between citizens and institutions.",
+  title: "SAUTI1 AI | Be heard",
+  description: "Talk or type to SAUTI1 AI and find the right Ugandan institution for your issue.",
 };
 
 export const viewport: Viewport = {
@@ -17,18 +16,12 @@ export const viewport: Viewport = {
   themeColor: "#ffffff",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const supabase = await createClient();
-  const { data: claimsData } = await supabase.auth.getClaims();
-  const initialUserId = typeof claimsData?.claims?.sub === "string"
-    ? claimsData.claims.sub
-    : null;
-
   return (
     <html lang="en">
-      <body><SessionBoundary initialUserId={initialUserId}>{children}</SessionBoundary></body>
+      <body><SessionBoundary>{children}</SessionBoundary></body>
     </html>
   );
 }
