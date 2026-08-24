@@ -35,7 +35,7 @@ function guestThinkingLevel() {
     case "high":
       return ThinkingLevel.HIGH;
     default:
-      return ThinkingLevel.MINIMAL;
+      return ThinkingLevel.LOW;
   }
 }
 
