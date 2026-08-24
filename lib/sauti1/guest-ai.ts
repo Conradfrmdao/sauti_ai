@@ -35,7 +35,7 @@ function guestThinkingLevel() {
     case "high":
       return ThinkingLevel.HIGH;
     default:
-      return ThinkingLevel.LOW;
+      return ThinkingLevel.MINIMAL;
   }
 }
 
@@ -63,6 +63,8 @@ export async function createGuestConversationReply(
     },
     baselineReply: draft.assistantReply,
   });
+  const abortController = new AbortController();
+  const abortTimeout = setTimeout(() => abortController.abort(), timeoutMs);
 
   try {
     const ai = new GoogleGenAI({ apiKey });
@@ -70,7 +72,8 @@ export async function createGuestConversationReply(
       model: process.env.GEMINI_MODEL || "gemini-3.7-flash",
       contents: prompt,
       config: {
-        httpOptions: { timeout: timeoutMs },
+        abortSignal: abortController.signal,
+        httpOptions: { timeout: 10_000 },
         maxOutputTokens: 180,
         temperature: 0.35,
         thinkingConfig: {
@@ -101,5 +104,7 @@ export async function createGuestConversationReply(
       error instanceof Error ? error.message : String(error)
     );
     return fallback;
+  } finally {
+    clearTimeout(abortTimeout);
   }
 }
