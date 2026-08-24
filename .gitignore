@@ -10,6 +10,7 @@ out/
 .env.*
 !.env.example
 .vercel/
+supabase/.temp/
 
 # Test and build artifacts
 coverage/
