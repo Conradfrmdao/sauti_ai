@@ -1,0 +1,31 @@
+{
+  "name": "sauti1-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test:ai": "jiti tests/report-ai.scenarios.ts",
+    "test:ai:live": "jiti tests/report-ai.live.ts",
+    "test:ai:benchmark": "jiti tests/report-ai.benchmark.ts"
+  },
+  "dependencies": {
+    "next": "16.3.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "lucide-react": "latest",
+    "@google/genai": "2.17.1",
+    "@supabase/supabase-js": "latest",
+    "@supabase/ssr": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@tailwindcss/postcss": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
+  }
+}
