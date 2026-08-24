@@ -1439,6 +1439,25 @@ function buildFallbackDraft(
   };
 }
 
+export function understandCitizenMessageDeterministically(
+  latestMessage: string,
+  catalog: InstitutionCatalogItem[],
+  locations: KnownLocation[],
+  previous?: Partial<ReportDraft>,
+  citizen?: CitizenContext,
+  evidence: ReportEvidenceInput[] = []
+): ReportDraft {
+  const replacement = reportReplacementMessage(latestMessage);
+  return buildFallbackDraft(
+    replacement || latestMessage,
+    catalog,
+    locations,
+    replacement ? undefined : previous,
+    citizen,
+    evidence
+  );
+}
+
 function normalizeDraft(
   value: TurnDecision,
   latestMessage: string,

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { createGuestConversationReply } from "@/lib/sauti1/guest-ai";
 import { guestInstitutionCatalog, guestKnownLocations } from "@/lib/sauti1/guest-catalog";
-import { ReportDraft, understandCitizenMessage } from "@/lib/sauti1/report-ai";
+import { ReportDraft, understandCitizenMessageDeterministically } from "@/lib/sauti1/report-ai";
 
 type GuestTurn = {
   role: "user" | "assistant";
@@ -154,8 +155,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Start a new guest conversation to continue." }, { status: 400 });
   }
 
-  const draft = await understandCitizenMessage(
-    history,
+  const draft = understandCitizenMessageDeterministically(
     message,
     guestInstitutionCatalog,
     guestKnownLocations,
@@ -164,14 +164,19 @@ export async function POST(request: Request) {
   const nextQuestionField = draft.semanticState.nextQuestionField || "";
   const accountOnlyQuestion = /(?:name|phone|account|meter|reference|candidate|application|case|person)/i
     .test(nextQuestionField);
-  const assistantReply = draft.readyToConfirm || (draft.institutionSlug && accountOnlyQuestion)
+  const requiresAccount = draft.readyToConfirm || Boolean(draft.institutionSlug && accountOnlyQuestion);
+  const generatedReply = draft.intent === "conversation" && !requiresAccount
+    ? await createGuestConversationReply(history, message, draft)
+    : { reply: draft.assistantReply, engine: "fallback" as const };
+  const assistantReply = requiresAccount
     ? `I understand the issue and can prepare it for ${draft.institutionName}. Sign in to continue securely, submit the report and track its progress.`
-    : draft.assistantReply;
+    : generatedReply.reply;
 
   return NextResponse.json({
     reply: assistantReply,
     intent: draft.intent,
     institutionName: draft.institutionSlug ? draft.institutionName : null,
+    engine: draft.intent === "conversation" ? generatedReply.engine : "catalog",
     context: guestContext(draft),
   }, { headers: { "Cache-Control": "no-store" } });
 }

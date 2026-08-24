@@ -62,9 +62,11 @@ GEMINI_MODEL=gemini-3.7-flash
 GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_THINKING_LEVEL=low
 GEMINI_TURN_TIMEOUT_MS=15000
+GEMINI_GUEST_TIMEOUT_MS=4500
 ```
 
 Never expose `GEMINI_API_KEY` in browser code or prefix it with `NEXT_PUBLIC_`.
+Guest reports use deterministic catalogue routing and return without waiting for a model. Open-ended guest conversation uses a compact Gemini call capped by `GEMINI_GUEST_TIMEOUT_MS`, then falls back locally if the model is unavailable.
 
 ## Database setup
 
