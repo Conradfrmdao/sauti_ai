@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowUp, AudioLines, LogIn, Mic, MicOff, UserPlus } from "lucide-react";
+import { ArrowUp, LogIn, Mic, MicOff, UserPlus } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
@@ -185,7 +186,8 @@ export function GuestLanding() {
     <div className="guest-app">
       <header className="guest-header">
         <Link href="/" className="guest-brand" aria-label="SAUTI1 AI home">
-          SAUTI<span>1</span><small>AI</small>
+          <Image className="guest-brand-mark" src="/brand/sauti1-mark.png" alt="" width={36} height={36} />
+          <span className="guest-brand-name">SAUTI<span>1</span><small>AI</small></span>
         </Link>
         <nav className="guest-auth-actions" aria-label="Account">
           <Link href="/login" className="guest-signin"><LogIn size={16} /> Sign in</Link>
@@ -197,7 +199,9 @@ export function GuestLanding() {
         <section className="guest-thread" aria-live="polite" aria-label="Conversation with Sauti1">
           {messages.length === 0 ? (
             <div className="guest-empty">
-              <div className="guest-mark" aria-hidden="true"><AudioLines size={24} /></div>
+              <div className="guest-mark" aria-hidden="true">
+                <Image src="/brand/sauti1-mark.png" alt="" width={64} height={64} />
+              </div>
               <h1>What can Sauti1 help with?</h1>
               <div aria-live="off" className="guest-suggestions" key={suggestionPage}>
                 {visibleSuggestions.map((suggestion, index) => (
