@@ -5,6 +5,8 @@ SAUTI1 AI is a citizen-to-institution reporting platform built for Uganda. Citiz
 ## What it does
 
 - Guided text and live voice reporting
+- Normal telephone reporting through Twilio Voice Trial
+- Two-way SMS reporting through Infobip SMS Trial
 - Public guest text and browser-voice conversation before sign-up
 - Structured report extraction with citizen corrections
 - Risk-aware follow-up questions and emergency guidance
@@ -47,6 +49,8 @@ Prerequisites:
 - Node.js 20.9 or newer
 - A Supabase project
 - A Google AI Studio API key with access to the configured Gemini models
+- A Twilio account/number with bidirectional Media Streams access
+- An Infobip account with an SMS sender and inbound-capable number
 
 Install dependencies:
 
@@ -59,6 +63,8 @@ Copy `.env.example` to `.env.local` and set these values:
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVER_ONLY_SERVICE_ROLE_KEY
+APP_URL=https://YOUR_PUBLIC_HOST
 GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 GEMINI_MODEL=gemini-3.7-flash
 GEMINI_GUEST_MODEL=gemini-3.5-flash-lite
@@ -66,6 +72,17 @@ GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 GEMINI_THINKING_LEVEL=low
 GEMINI_TURN_TIMEOUT_MS=15000
 GEMINI_GUEST_TIMEOUT_MS=4500
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=+...
+TWILIO_STREAM_SECRET=GENERATE_A_LONG_RANDOM_SECRET
+TWILIO_WEBHOOK_BASE_URL=https://YOUR_PUBLIC_HOST
+TWILIO_MEDIA_STREAM_URL=wss://YOUR_PUBLIC_HOST/api/voice/twilio/media
+INFOBIP_API_KEY=...
+INFOBIP_BASE_URL=YOUR_TENANT.api.infobip.com
+INFOBIP_SENDER_NUMBER=...
+INFOBIP_WEBHOOK_USERNAME=...
+INFOBIP_WEBHOOK_PASSWORD=...
 ```
 
 Never expose `GEMINI_API_KEY` in browser code or prefix it with `NEXT_PUBLIC_`.
@@ -85,7 +102,46 @@ npm run dev
 
 Open `http://localhost:3000`.
 
+## Telephone and SMS setup
+
+Apply `supabase/migrations/016_low_tech_channels.sql` before enabling either provider. Anonymous telephone/SMS contacts are stored as external phone identities; the application does not create duplicate Supabase Auth users. Provider event and message IDs make webhook retries idempotent.
+
+Configure the Twilio number's **A call comes in** webhook as an HTTP `POST` to:
+
+```text
+https://YOUR_PUBLIC_HOST/api/voice/twilio/incoming
+```
+
+The returned TwiML opens `wss://YOUR_PUBLIC_HOST/api/voice/twilio/media`; its Stream status callback is:
+
+```text
+https://YOUR_PUBLIC_HOST/api/voice/twilio/status
+```
+
+Twilio requests are signature checked. The media start is also bound to the account, call, caller, expected 8 kHz mu-law format, and a short-lived signed session token.
+
+Configure Infobip inbound SMS and delivery webhooks as JSON `POST` requests with the same Basic-auth credentials as the two `INFOBIP_WEBHOOK_*` variables:
+
+```text
+Inbound:  https://YOUR_PUBLIC_HOST/api/sms/infobip/incoming
+Status:   https://YOUR_PUBLIC_HOST/api/sms/infobip/status
+```
+
+Send a first SMS to the Infobip number. SAUTI1 resumes the conversation for up to 24 hours, asks one concise question per SMS, and accepts `YES`/`CONFIRM` when the draft is ready. The final reply contains the ticket code. Call the Twilio number to test the same report flow by speech.
+
+Use `npm run dev:vercel` for local WebSocket testing behind an HTTPS/WSS tunnel; plain `next dev` cannot emulate Vercel's WebSocket upgrade runtime. Trial accounts may restrict calls/SMS to verified recipients, add provider trial messaging, and limit available senders or inbound numbers by country/account. Infobip two-way SMS requires an inbound-capable number.
+
+Do not log or expose the service-role key, provider API keys, auth token, webhook password, stream secret, complete phone numbers, message bodies, or call audio.
+
 ## Verification
+
+Run static checks and deterministic provider/audio tests:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:channels
+```
 
 Run the deterministic routing and conversation suite:
 

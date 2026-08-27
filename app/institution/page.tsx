@@ -16,6 +16,7 @@ import { redirect } from "next/navigation";
 
 import { AccountMenu } from "@/components/account-menu";
 import { getInitials } from "@/lib/identity";
+import { reportSourceLabel } from "@/lib/sauti1/source-label";
 import { createClient } from "@/lib/supabase/server";
 
 type TicketRecord = {
@@ -291,7 +292,7 @@ export default async function InstitutionPage() {
                             <h3 className="mt-1 text-[12px] font-bold">{statusLabel(ticket.category || "citizen_service_issue")}</h3>
                             <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#687388]">{report?.ai_summary || report?.description}</p>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-[8px] text-[#8490a2]">
-                              <span>{statusLabel(ticket.priority)} priority</span><span>-</span><span>{report?.source === "voice" ? "Voice AI" : "Text AI"}</span>
+                              <span>{statusLabel(ticket.priority)} priority</span><span>-</span><span>{reportSourceLabel(report?.source)}</span>
                               {report?.location_text && <><span>-</span><span>{report.location_text}</span></>}
                             </div>
                             <Link className="mt-2 inline-flex items-center text-[9px] font-bold text-[#1d5eff] hover:underline" href={`/institution/tickets/${ticket.id}`}>

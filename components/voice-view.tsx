@@ -25,6 +25,19 @@ type VoiceViewProps = {
   initialConversationId?: string;
   initialReportId?: string;
   initialPreview?: ReportPreview;
+  guestMode?: boolean;
+};
+
+type GuestContext = {
+  description?: string;
+  summary?: string;
+  category?: string;
+  institutionSlug?: string | null;
+  institutionName?: string;
+  priority?: string;
+  confidence?: number;
+  locationText?: string | null;
+  intakeData?: Record<string, string>;
 };
 
 type VoiceFunctionCall = {
@@ -35,7 +48,12 @@ type VoiceFunctionCall = {
 
 const welcomeMessage: ChatMessage = {
   role: "assistant",
-  text: "Start Voice Sauti1, then tell me what happened. You can interrupt me naturally while I speak.",
+  text: "Start Voice Sauti1, then tell me what happened.",
+};
+
+const guestWelcomeMessage: ChatMessage = {
+  role: "assistant",
+  text: "Start live voice and tell me what happened. This guest conversation will not be saved or submitted.",
 };
 
 function decodeBase64(value: string) {
@@ -125,8 +143,11 @@ export function VoiceView({
   initialConversationId,
   initialReportId,
   initialPreview,
+  guestMode = false,
 }: VoiceViewProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages?.length ? initialMessages : [welcomeMessage]);
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialMessages?.length ? initialMessages : [guestMode ? guestWelcomeMessage : welcomeMessage]
+  );
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [reportId, setReportId] = useState(initialReportId);
   const [preview, setPreview] = useState(initialPreview);
@@ -162,6 +183,8 @@ export function VoiceView({
   const turnAbortRef = useRef<AbortController | undefined>(undefined);
   const ticketPollAbortRef = useRef<AbortController | undefined>(undefined);
   const conversationGenerationRef = useRef(0);
+  const guestHistoryRef = useRef<ChatMessage[]>([]);
+  const guestContextRef = useRef<GuestContext | undefined>(undefined);
 
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
   useEffect(() => { reportIdRef.current = reportId; }, [reportId]);
@@ -358,6 +381,53 @@ export function VoiceView({
       : [...current, { role: "user", text: citizenText }]);
 
     try {
+      if (guestMode) {
+        const history = guestHistoryRef.current.slice(-10);
+        guestHistoryRef.current = [...history, { role: "user", text: citizenText }];
+        const response = await fetch("/api/sauti1/guest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: citizenText,
+            history,
+            context: guestContextRef.current,
+          }),
+        });
+        const payload = await response.json() as {
+          reply?: string;
+          context?: GuestContext;
+          institutionName?: string | null;
+          error?: string;
+        };
+        if (conversationGeneration !== conversationGenerationRef.current) return;
+        if (!response.ok || !payload.reply) {
+          throw new Error(payload.error || "Sauti1 could not process that voice turn.");
+        }
+
+        const assistantMessage: ChatMessage = { role: "assistant", text: payload.reply };
+        guestContextRef.current = payload.context;
+        guestHistoryRef.current = [
+          ...guestHistoryRef.current,
+          assistantMessage,
+        ].slice(-10);
+        setMessages((current) => [...current, assistantMessage]);
+        sessionRef.current?.sendToolResponse({
+          functionResponses: [{
+            id: call.id,
+            name: call.name,
+            response: {
+              output: {
+                assistantReply: payload.reply,
+                reportReady: false,
+                institutionName: payload.institutionName ?? null,
+                guestConversation: true,
+              },
+            },
+          }],
+        });
+        return;
+      }
+
       if (
         isConfirmationPhrase(citizenText) &&
         reportIdRef.current &&
@@ -426,7 +496,7 @@ export function VoiceView({
         turnAbortRef.current = undefined;
       }
     }
-  }, [submitCurrentReport]);
+  }, [guestMode, submitCurrentReport]);
 
   const handleLiveMessage = useCallback((message: LiveServerMessage) => {
     const content = message.serverContent;
@@ -515,7 +585,10 @@ export function VoiceView({
       const stream = await requestMicrophone();
       streamRef.current = stream;
 
-      const tokenResponse = await fetch("/api/sauti1/live-token", { method: "POST" });
+      const tokenResponse = await fetch(
+        guestMode ? "/api/sauti1/guest-live-token" : "/api/sauti1/live-token",
+        { method: "POST" }
+      );
       const tokenPayload = await tokenResponse.json();
       if (!tokenResponse.ok) throw new Error(tokenPayload.error || "Could not start Voice Sauti1.");
 
@@ -578,7 +651,7 @@ export function VoiceView({
   function clearConversationData() {
     ticketPollAbortRef.current?.abort();
     ticketPollAbortRef.current = undefined;
-    setMessages([welcomeMessage]);
+    setMessages([guestMode ? guestWelcomeMessage : welcomeMessage]);
     setConversationId(undefined);
     setReportId(undefined);
     setPreview(undefined);
@@ -586,6 +659,8 @@ export function VoiceView({
     setInputCaption("");
     setOutputCaption("");
     setError(undefined);
+    guestHistoryRef.current = [];
+    guestContextRef.current = undefined;
     conversationIdRef.current = undefined;
     reportIdRef.current = undefined;
     previewRef.current = undefined;
@@ -610,6 +685,7 @@ export function VoiceView({
     endSession("ended");
     clearConversationData();
 
+    if (guestMode) return;
     if (!activeConversationId) return;
 
     try {
@@ -692,14 +768,16 @@ export function VoiceView({
           : state === "submitted" ? "Report submitted"
             : state === "ended" ? "Voice conversation ended"
               : state === "error" ? "Voice needs attention"
-                : "Voice Sauti1 is ready";
+                : guestMode ? "Guest Voice is ready" : "Voice Sauti1 is ready";
 
   return (
-    <div className="voice-page">
-      <div className="grid h-full w-full max-w-[1120px] min-h-0 gap-4 lg:grid-cols-[minmax(0,1fr)_310px]">
+    <div className={`voice-page ${guestMode ? "guest-live-voice" : ""}`}>
+      <div className={`grid h-full w-full min-h-0 gap-4 ${guestMode ? "max-w-[820px]" : "max-w-[1120px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
         <section className="flex min-h-0 flex-col items-center overflow-hidden rounded-[8px] border border-[#e3e7ef] bg-white px-4 py-4 sm:px-6">
           <div className="voice-status shrink-0"><span className={`online-dot ${state === "error" ? "!bg-[#d94b45]" : ""}`} />{statusText}</div>
-          <p className="voice-hint shrink-0 text-center">Speak naturally. Sauti1 will finish each reply before listening for the next detail.</p>
+          <p className="voice-hint shrink-0 text-center">{guestMode
+            ? "Speak naturally. Sign in when you are ready to save, submit and track a report."
+            : "Speak naturally. Sauti1 will finish each reply before listening for the next detail."}</p>
 
           <div className="min-h-0 w-full flex-1 overflow-y-auto px-1">
             <div className={`sauti-core-wrap mx-auto !w-[min(300px,58vw)] ${["listening", "speaking", "processing"].includes(state) ? "is-active" : ""}`} aria-label={statusText}>
@@ -718,20 +796,20 @@ export function VoiceView({
 
           <div className="flex shrink-0 items-center justify-center gap-3 pt-3">
             {state === "idle" || state === "ended" || state === "error" ? (
-              <button className="inline-flex h-12 items-center gap-2 rounded-[8px] bg-[#155dff] px-5 text-[12px] font-bold text-white" onClick={startSession} type="button"><Mic2 size={18} /> Start live voice</button>
+              <button className="inline-flex h-12 items-center gap-2 rounded-[8px] bg-[#155dff] px-5 text-[12px] font-bold text-white" onClick={startSession} type="button"><Mic2 size={18} /> {guestMode ? "Start guest voice" : "Start live voice"}</button>
             ) : state === "submitted" ? (
               <button className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[#155dff] px-4 text-[11px] font-bold text-white" onClick={resetConversation} type="button"><RotateCcw size={16} /> Start a new call</button>
             ) : (
               <>
                 <button aria-label={muted ? "Unmute microphone" : "Mute microphone"} className="grid h-11 w-11 place-items-center rounded-full border border-[#dbe2ec] bg-white text-[#24334f]" onClick={toggleMute} title={muted ? "Unmute microphone" : "Mute microphone"} type="button">{muted ? <MicOff size={19} /> : <Mic2 size={19} />}</button>
-                <button aria-label="End and discard voice conversation" className="grid h-12 w-12 place-items-center rounded-full bg-[#d94b45] text-white" onClick={() => void cancelConversation()} title="End and discard voice conversation" type="button"><PhoneOff size={20} /></button>
+                <button aria-label="End voice conversation" className="grid h-12 w-12 place-items-center rounded-full bg-[#d94b45] text-white" onClick={() => void cancelConversation()} title="End voice conversation" type="button"><PhoneOff size={20} /></button>
                 <span className="grid h-11 w-11 place-items-center rounded-full bg-[#edf3ff] text-[#1d5eff]" title="Full duplex audio">{state === "connecting" || state === "processing" ? <Loader2 className="animate-spin" size={19} /> : <Volume2 size={19} />}</span>
               </>
             )}
           </div>
         </section>
 
-        <aside className="min-h-0 overflow-y-auto rounded-[8px] border border-[#e3e7ef] bg-white p-4">
+        {!guestMode && <aside className="min-h-0 overflow-y-auto rounded-[8px] border border-[#e3e7ef] bg-white p-4">
           <h2 className="text-[14px] font-bold">Voice report</h2>
           {ticket ? (
             <div className="mt-4 space-y-3">
@@ -776,7 +854,7 @@ export function VoiceView({
               {messages.slice(-8).map((message, index) => <div className={`rounded-[8px] px-2.5 py-2 text-[9px] leading-4 ${message.role === "user" ? "bg-[#eaf1ff] text-[#24406e]" : "bg-[#f5f7fa] text-[#56647a]"}`} key={`${message.role}-${index}`}>{message.text}</div>)}
             </div>
           </div>
-        </aside>
+        </aside>}
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { reportSourceLabel } from "@/lib/sauti1/source-label";
 
 type TicketListRow = {
   id: string;
@@ -21,13 +22,13 @@ type TicketListRow = {
   category: string | null;
   created_at: string;
   reports: {
-    user_id: string;
+    user_id: string | null;
     description: string;
     ai_summary: string | null;
     source: string;
     location_text: string | null;
   } | {
-    user_id: string;
+    user_id: string | null;
     description: string;
     ai_summary: string | null;
     source: string;
@@ -130,7 +131,7 @@ export default async function InstitutionTicketsPage() {
                     {report?.location_text && <span className="inline-flex items-center gap-1"><MapPin size={11} /> {report.location_text}</span>}
                   </div>
                 </div>
-                <div className="text-[10px] text-[#7c889b]"><span className="inline-flex items-center gap-1"><Clock3 size={12} /> {dateLabel(ticket.created_at)}</span><p className="mt-1">{report?.source === "voice" ? "Voice Sauti1" : "Text Sauti1"}</p></div>
+                <div className="text-[10px] text-[#7c889b]"><span className="inline-flex items-center gap-1"><Clock3 size={12} /> {dateLabel(ticket.created_at)}</span><p className="mt-1">{reportSourceLabel(report?.source)}</p></div>
                 <span className="grid h-8 w-8 place-items-center rounded-[8px] text-[#65728a] group-hover:bg-[#eaf1ff] group-hover:text-[#1d5eff]"><ArrowUpRight size={16} /></span>
               </Link>
             );

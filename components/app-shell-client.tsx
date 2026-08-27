@@ -91,7 +91,10 @@ export function AppShellClient({ children, identity, attentionCount: initialAtte
   const [moreOpen, setMoreOpen] = useState(false);
   const [attentionCount, setAttentionCount] = useState(initialAttentionCount);
 
+  // Route and server-prop changes intentionally reset local shell state.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMoreOpen(false), [pathname]);
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setAttentionCount(initialAttentionCount), [initialAttentionCount]);
   useEffect(() => {
     const updateAttention = (event: Event) => {

@@ -16,7 +16,13 @@ export async function updateSession(
     });
 
   const pathname = request.nextUrl.pathname;
-  if (pathname === "/" || pathname === "/login" || pathname === "/api/sauti1/guest") {
+  if (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname.startsWith("/guest/") ||
+    pathname === "/api/sauti1/guest" ||
+    pathname === "/api/sauti1/guest-live-token"
+  ) {
     return supabaseResponse;
   }
 

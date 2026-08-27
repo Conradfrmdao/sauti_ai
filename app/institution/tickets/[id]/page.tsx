@@ -16,6 +16,7 @@ import { notFound, redirect } from "next/navigation";
 import { TicketStatusActions } from "@/components/ticket-status-actions";
 import { intakeFieldLabel } from "@/lib/sauti1/intake-fields";
 import { visibleIntakeData } from "@/lib/sauti1/report-ai";
+import { reportSourceLabel } from "@/lib/sauti1/source-label";
 import { createClient } from "@/lib/supabase/server";
 
 type TicketDetail = {
@@ -31,7 +32,7 @@ type TicketDetail = {
   updated_at: string;
   reports: {
     id: string;
-    user_id: string;
+    user_id: string | null;
     conversation_id: string | null;
     description: string;
     ai_summary: string | null;
@@ -54,7 +55,7 @@ type TicketDetail = {
     }[] | null;
   } | {
     id: string;
-    user_id: string;
+    user_id: string | null;
     conversation_id: string | null;
     description: string;
     ai_summary: string | null;
@@ -134,7 +135,9 @@ export default async function InstitutionTicketDetailPage({ params }: { params: 
   if (!report) notFound();
 
   const [{ data: citizen }, { data: messages }, { data: events }] = await Promise.all([
-    supabase.from("profiles").select("id, full_name, phone, created_at").eq("id", report.user_id).maybeSingle(),
+    report.user_id
+      ? supabase.from("profiles").select("id, full_name, phone, created_at").eq("id", report.user_id).maybeSingle()
+      : Promise.resolve({ data: null }),
     report.conversation_id
       ? supabase.from("messages").select("id, sender_type, body, created_at").eq("conversation_id", report.conversation_id).order("created_at", { ascending: true })
       : Promise.resolve({ data: [] }),
@@ -168,7 +171,7 @@ export default async function InstitutionTicketDetailPage({ params }: { params: 
           <section className="rounded-[8px] border border-[#e0e5ed] bg-white p-4 sm:p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><p className="text-[9px] font-bold uppercase text-[#7f8a9c]">Citizen report</p><h2 className="mt-1 text-[20px] font-bold">{label(ticket.category || report.detected_category)}</h2></div>
-              <div className="flex gap-2"><span className="rounded-full bg-[#fff2e9] px-2.5 py-1 text-[9px] font-bold text-[#a64c20]">{label(ticket.priority)} priority</span><span className="rounded-full bg-[#edf3ff] px-2.5 py-1 text-[9px] font-bold text-[#1d5eff]">{report.source === "voice" ? "Voice Sauti1" : "Text Sauti1"}</span></div>
+              <div className="flex gap-2"><span className="rounded-full bg-[#fff2e9] px-2.5 py-1 text-[9px] font-bold text-[#a64c20]">{label(ticket.priority)} priority</span><span className="rounded-full bg-[#edf3ff] px-2.5 py-1 text-[9px] font-bold text-[#1d5eff]">{reportSourceLabel(report.source)}</span></div>
             </div>
             <div className="mt-4 border-t border-[#edf0f4] pt-4"><h3 className="text-[11px] font-bold">What the citizen reported</h3><p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-[#33415b]">{report.description}</p></div>
             {report.ai_summary && <div className="mt-4 rounded-[8px] bg-[#f4f7fc] p-3"><h3 className="text-[10px] font-bold text-[#5f6d84]">SAUTI1 summary</h3><p className="mt-1 text-[12px] leading-5 text-[#34425b]">{report.ai_summary}</p></div>}
@@ -203,9 +206,9 @@ export default async function InstitutionTicketDetailPage({ params }: { params: 
         <aside className="space-y-4">
           <section className="rounded-[8px] border border-[#e0e5ed] bg-white p-4">
             <div className="flex items-center gap-2"><UserRound className="text-[#496bb2]" size={17} /><h2 className="text-[13px] font-bold">Sent by</h2></div>
-            <div className="mt-3 rounded-[8px] bg-[#f5f7fb] p-3"><p className="text-[13px] font-bold">{citizen?.full_name || "Citizen"}</p><p className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#68758a]"><ShieldCheck size={12} className="text-[#087a50]" /> Authenticated citizen account</p></div>
+            <div className="mt-3 rounded-[8px] bg-[#f5f7fb] p-3"><p className="text-[13px] font-bold">{citizen?.full_name || "Citizen"}</p><p className="mt-1 inline-flex items-center gap-1 text-[10px] text-[#68758a]"><ShieldCheck size={12} className="text-[#087a50]" /> {report.user_id ? "Authenticated citizen account" : `${reportSourceLabel(report.source)} contact`}</p></div>
             <dl className="mt-3 space-y-2.5 text-[10px]">
-              <div className="flex items-start justify-between gap-3"><dt className="inline-flex items-center gap-1 text-[#7a869a]"><Phone size={12} /> Phone</dt><dd className="text-right font-semibold">{citizen?.phone || "Not provided"}</dd></div>
+              <div className="flex items-start justify-between gap-3"><dt className="inline-flex items-center gap-1 text-[#7a869a]"><Phone size={12} /> Phone</dt><dd className="text-right font-semibold">{citizen?.phone || intakeData.contact_phone || "Not provided"}</dd></div>
               <div className="flex items-start justify-between gap-3"><dt className="inline-flex items-center gap-1 text-[#7a869a]"><MapPin size={12} /> Location</dt><dd className="max-w-[180px] text-right font-semibold">{report.location_text || "Not provided"}</dd></div>
               <div className="flex items-start justify-between gap-3"><dt className="text-[#7a869a]">AI confidence</dt><dd className="font-semibold">{confidence}</dd></div>
             </dl>

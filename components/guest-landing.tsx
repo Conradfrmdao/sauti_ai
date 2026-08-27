@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, LogIn, Mic, MicOff, UserPlus } from "lucide-react";
+import { ArrowUp, LogIn, Mic, UserPlus } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -21,28 +21,6 @@ type GuestContext = {
   locationText?: string | null;
   intakeData?: Record<string, string>;
 };
-
-type SpeechRecognitionResultLike = {
-  0: { transcript: string };
-};
-
-type SpeechRecognitionEventLike = {
-  results: ArrayLike<SpeechRecognitionResultLike>;
-};
-
-type SpeechRecognitionLike = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-};
-
-type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 const suggestions = [
   "My water meter was stolen",
@@ -72,24 +50,13 @@ export function GuestLanding() {
   const [context, setContext] = useState<GuestContext>();
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
-  const [listening, setListening] = useState(false);
   const [suggestionPage, setSuggestionPage] = useState(0);
   const [error, setError] = useState("");
   const threadEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const speechGenerationRef = useRef(0);
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
-
-  useEffect(() => () => {
-    recognitionRef.current?.abort();
-    speechGenerationRef.current += 1;
-    utteranceRef.current = null;
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-  }, []);
 
   useEffect(() => {
     if (messages.length) return;
@@ -103,59 +70,10 @@ export function GuestLanding() {
     suggestions[(suggestionPage * 3 + index) % suggestions.length]
   );
 
-  function stopSpeech() {
-    speechGenerationRef.current += 1;
-    utteranceRef.current = null;
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-  }
-
-  function speakAssistantReply(reply: string) {
-    if (!("speechSynthesis" in window)) return;
-    stopSpeech();
-    const generation = speechGenerationRef.current;
-    const sentences = reply.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [reply];
-    const chunks = sentences.reduce<string[]>((items, sentence) => {
-      const text = sentence.trim();
-      const previous = items.at(-1);
-      if (previous && `${previous} ${text}`.length <= 180) {
-        items[items.length - 1] = `${previous} ${text}`;
-      } else if (text) {
-        items.push(text);
-      }
-      return items;
-    }, []);
-
-    const speakChunk = (index: number) => {
-      if (generation !== speechGenerationRef.current || !chunks[index]) return;
-      const utterance = new SpeechSynthesisUtterance(chunks[index]);
-      utterance.lang = "en-UG";
-      utterance.rate = 0.98;
-      utterance.onend = () => {
-        if (utteranceRef.current === utterance) utteranceRef.current = null;
-        speakChunk(index + 1);
-      };
-      utterance.onerror = (event) => {
-        if (utteranceRef.current === utterance) utteranceRef.current = null;
-        if (
-          generation === speechGenerationRef.current &&
-          !["canceled", "interrupted"].includes(event.error)
-        ) {
-          setError("Voice playback stopped. You can read the complete reply above or try voice again.");
-        }
-      };
-      utteranceRef.current = utterance;
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utterance);
-    };
-
-    speakChunk(0);
-  }
-
-  async function sendMessage(rawMessage: string, speakReply = false) {
+  async function sendMessage(rawMessage: string) {
     const message = rawMessage.trim();
     if (!message || pending) return;
 
-    stopSpeech();
     const history = messages.slice(-10);
     setMessages((current) => [...current, { role: "user", text: message }]);
     setInput("");
@@ -179,8 +97,6 @@ export function GuestLanding() {
 
       setMessages((current) => [...current, { role: "assistant", text: payload.reply! }]);
       setContext(payload.context);
-
-      if (speakReply) speakAssistantReply(payload.reply);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Sauti1 could not respond right now.");
     } finally {
@@ -191,45 +107,6 @@ export function GuestLanding() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendMessage(input);
-  }
-
-  function toggleVoice() {
-    if (listening) {
-      recognitionRef.current?.stop();
-      setListening(false);
-      return;
-    }
-
-    const speechWindow = window as typeof window & {
-      SpeechRecognition?: SpeechRecognitionConstructor;
-      webkitSpeechRecognition?: SpeechRecognitionConstructor;
-    };
-    const Recognition = speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
-    if (!Recognition) {
-      setError("Voice input is not available in this browser. You can still message Sauti1.");
-      return;
-    }
-
-    const recognition = new Recognition();
-    recognition.lang = "en-UG";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.onresult = (event) => {
-      const result = event.results[event.results.length - 1]?.[0]?.transcript?.trim();
-      if (result) {
-        setInput(result);
-        void sendMessage(result, true);
-      }
-    };
-    recognition.onerror = () => {
-      setListening(false);
-      setError("I could not hear that clearly. Try again or type your message.");
-    };
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
-    setError("");
-    setListening(true);
-    recognition.start();
   }
 
   return (
@@ -253,13 +130,6 @@ export function GuestLanding() {
                 <Image src="/brand/sauti1-mark.png" alt="" width={64} height={64} />
               </div>
               <h1>What can Sauti1 help with?</h1>
-              <div aria-live="off" className="guest-suggestions" key={suggestionPage}>
-                {visibleSuggestions.map((suggestion, index) => (
-                  <button className={`tone-${index + 1}`} key={suggestion} onClick={() => void sendMessage(suggestion)} type="button">
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
             </div>
           ) : (
             <div className="guest-messages">
@@ -295,7 +165,7 @@ export function GuestLanding() {
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder={listening ? "Listening..." : "Message Sauti1"}
+              placeholder="Message Sauti1"
               maxLength={1200}
               disabled={pending}
               aria-label="Message Sauti1"
@@ -305,20 +175,26 @@ export function GuestLanding() {
             </button>
           </form>
           <div className="guest-or" aria-hidden="true"><span>OR</span></div>
-          <button
-            className={`guest-voice-cta ${listening ? "active" : ""}`}
-            type="button"
-            onClick={toggleVoice}
-            disabled={pending}
-          >
-            <span>{listening ? <MicOff size={21} /> : <Mic size={21} />}</span>
+          <Link className="guest-voice-cta" href="/guest/voice">
+            <span><Mic size={21} /></span>
             <div>
-              <strong>{listening ? "Listening..." : "Talk to our AI using your voice"}</strong>
+              <strong>Talk to our AI using your voice</strong>
             </div>
-          </button>
-          <p className="guest-privacy"><strong>Guest conversations are not saved or submitted.</strong> Sign in or create an account to securely submit and track a report.</p>
+          </Link>
+          {messages.length === 0 && (
+            <div aria-live="off" className="guest-suggestions" key={suggestionPage}>
+              {visibleSuggestions.map((suggestion, index) => (
+                <button className={`tone-${index + 1}`} key={suggestion} onClick={() => void sendMessage(suggestion)} type="button">
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </main>
+      <footer className="guest-footer">
+        <p className="guest-privacy"><strong>Guest conversations are not saved or submitted.</strong> Sign in or create an account to securely submit and track a report.</p>
+      </footer>
     </div>
   );
 }
