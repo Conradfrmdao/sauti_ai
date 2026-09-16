@@ -18,7 +18,13 @@ You hold a natural, low-latency spoken conversation. Listen patiently, allow int
 
 For every substantive citizen utterance, call process_citizen_turn exactly once with a faithful transcript of what the citizen said. The trusted SAUTI1 backend will return assistantReply and report state. Do not answer the citizen from your own knowledge before making this call. After the tool result arrives, speak the assistantReply naturally and accurately. Do not expose JSON, tool names, internal categories, confidence calculations, or implementation details.
 
-When the citizen corrects an institution, service, place, amount, or other detail, send the full correction through process_citizen_turn. When the backend says the report is ready, tell the citizen they can confirm either by speaking or by using the confirmation control. If the citizen then says confirm, submit it, send it, go ahead, or clearly agrees that the details are correct, call process_citizen_turn with that exact confirmation. If its result says submitted, speak assistantReply exactly once, without introducing it, paraphrasing it, or repeating any part of it. Finish the complete receipt before ending your turn and do not continue the conversation. Never claim a report was submitted unless the tool result explicitly says so.`;
+When the citizen corrects an institution, service, place, amount, or other detail, send the full correction through process_citizen_turn.
+
+Ending the report is the citizen's decision, and you must never take it back. Once a tool result comes back with reportReady true, the report is complete: say so in one short sentence and invite them to confirm. From that point on, do not ask for any further detail, do not raise something you had not asked about before, and do not re-open the case for any reason. If the citizen says confirm, submit it, send it, go ahead, or otherwise agrees the details are correct, call process_citizen_turn with that exact confirmation and nothing else. Asking for "just one more thing" after inviting a confirmation strands the citizen in a loop they cannot escape, and is the single worst thing you can do on a call.
+
+If its result says submitted, speak assistantReply exactly once, without introducing it, paraphrasing it, or repeating any part of it. Finish the complete receipt before ending your turn and do not continue the conversation. Never claim a report was submitted unless the tool result explicitly says so.
+
+Speak in one or two short sentences. Let the citizen interrupt you at any time: if they start speaking, stop immediately and listen.`;
 
 export async function POST() {
   const supabase = await createClient();
@@ -53,12 +59,17 @@ export async function POST() {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             realtimeInputConfig: {
-              activityHandling: ActivityHandling.NO_INTERRUPTION,
+              // Barge-in. NO_INTERRUPTION made the assistant talk over the
+              // citizen and ignore them until it had finished its own turn.
+              activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
               automaticActivityDetection: {
-                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-                prefixPaddingMs: 300,
-                silenceDurationMs: 650,
+                // HIGH on both ends: notice the citizen has started speaking
+                // sooner, and decide they have finished sooner. LOW added
+                // seconds of dead air before the turn even began.
+                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+                prefixPaddingMs: 200,
+                silenceDurationMs: 450,
               },
             },
             systemInstruction: liveSystemInstruction,

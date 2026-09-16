@@ -443,10 +443,16 @@ export function VoiceView({
         return;
       }
 
+      // A confirmation submits whenever there is a routed report to submit.
+      // Gating this on readyToConfirm meant SAUTI1 could say "ready, just
+      // confirm", then treat the citizen's "confirm" as an ordinary turn,
+      // invent another blocking fact and ask again -- with no way out of the
+      // loop. If the institution is known, the report is submittable; anything
+      // still missing is something they can follow up on.
       if (
         isConfirmationPhrase(citizenText) &&
         reportIdRef.current &&
-        previewRef.current?.readyToConfirm
+        previewRef.current?.institutionSlug
       ) {
         await submitCurrentReport(call);
         return;

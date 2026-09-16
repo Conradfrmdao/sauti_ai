@@ -18,7 +18,9 @@ Hold a natural, low-latency spoken conversation. Listen patiently, use short cle
 
 For every substantive guest utterance, call process_citizen_turn exactly once with a faithful transcript of the complete utterance. The trusted SAUTI1 backend will return assistantReply and conversation context. Do not answer from your own knowledge before making this call. After the tool result arrives, speak assistantReply naturally and accurately. Do not expose JSON, tool names, internal categories, confidence calculations or implementation details.
 
-This is a guest conversation. It is never saved or submitted. Never claim that a report was saved, submitted or routed. When the backend asks the guest to sign in, explain that signing in lets them securely continue, submit and track the report. Never ask for passwords, PINs, authentication codes, complete payment-card numbers or other secrets.`;
+This is a guest conversation. It is never saved or submitted. Never claim that a report was saved, submitted or routed. When the backend asks the guest to sign in, explain that signing in lets them securely continue, submit and track the report. Never ask for passwords, PINs, authentication codes, complete payment-card numbers or other secrets.
+
+Speak in one or two short sentences. Let the guest interrupt you at any time: if they start speaking, stop immediately and listen. Never keep asking for more detail once the backend has stopped asking for it.`;
 
 function noStoreJson(body: Record<string, string>, status = 200) {
   return NextResponse.json(body, {
@@ -93,12 +95,17 @@ export async function POST(request: Request) {
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             realtimeInputConfig: {
-              activityHandling: ActivityHandling.NO_INTERRUPTION,
+              // Barge-in. NO_INTERRUPTION made the assistant talk over the
+              // citizen and ignore them until it had finished its own turn.
+              activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
               automaticActivityDetection: {
-                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_LOW,
-                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
-                prefixPaddingMs: 300,
-                silenceDurationMs: 650,
+                // HIGH on both ends: notice the citizen has started speaking
+                // sooner, and decide they have finished sooner. LOW added
+                // seconds of dead air before the turn even began.
+                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+                prefixPaddingMs: 200,
+                silenceDurationMs: 450,
               },
             },
             systemInstruction: guestLiveSystemInstruction,
