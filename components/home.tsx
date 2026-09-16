@@ -1,7 +1,8 @@
 import {
   ArrowRight,
+  AudioLines,
   FileText,
-  Mic2,
+  MessageSquareText,
   Send,
   ShieldCheck,
 } from "lucide-react";
@@ -42,10 +43,23 @@ export function CitizenHome({
   return (
     <div className="citizen-home">
       <header className="citizen-home-intro">
-        <p className="eyebrow">Signal → Trust → Action</p>
         <h1>Tell us what happened.</h1>
-        <p>SAUTI1 builds a clear case, finds the responsible institution, and lets you review every detail before anything is sent.</p>
+        <p>SAUTI1 works out which institution is responsible, builds the case, and shows you everything before it is sent.</p>
       </header>
+
+      <section className="assistant-modes" aria-label="Ways to report">
+        <Link className="assistant-mode is-voice" href="/voice">
+          <span className="assistant-mode-icon"><AudioLines aria-hidden="true" size={22} /></span>
+          <strong>Talk with our AI</strong>
+          <p>Speak naturally and SAUTI1 will take it from there.</p>
+        </Link>
+        <Link className="assistant-mode is-text" href="/chat">
+          <span className="assistant-mode-icon"><MessageSquareText aria-hidden="true" size={22} /></span>
+          <span className="assistant-mode-tag">Default</span>
+          <strong>Text our AI</strong>
+          <p>Type what happened and get clear, guided help.</p>
+        </Link>
+      </section>
 
       <section className="report-composer-panel" aria-labelledby="report-composer-title">
         <div className="report-composer-heading">
@@ -60,14 +74,22 @@ export function CitizenHome({
           <div className="report-composer-actions">
             <p><ShieldCheck aria-hidden="true" size={15} /> Nothing is submitted until you confirm.</p>
             <div>
-              <Link className="secondary-action" href="/voice"><Mic2 aria-hidden="true" size={17} /> Use voice</Link>
               <button type="submit">Build my case <Send aria-hidden="true" size={17} /></button>
             </div>
           </div>
         </form>
-        <div className="report-prompt-row" aria-label="Example issues">
+      </section>
+
+      <section aria-labelledby="try-asking-title">
+        <div className="section-heading">
+          <h2 id="try-asking-title">Try asking about</h2>
+        </div>
+        <div className="report-prompt-row">
           {prompts.map((prompt) => (
-            <Link href={{ pathname: "/chat", query: { prompt } }} key={prompt} prefetch={false}>{prompt}</Link>
+            <Link href={{ pathname: "/chat", query: { prompt } }} key={prompt} prefetch={false}>
+              <MessageSquareText aria-hidden="true" size={16} />
+              {prompt}
+            </Link>
           ))}
         </div>
       </section>
@@ -81,7 +103,7 @@ export function CitizenHome({
 
       <section className="recent-cases">
         <div className="section-heading">
-          <div><p className="eyebrow">Accountability</p><h2>Recent cases</h2></div>
+          <h2>Recent activity</h2>
           <Link href="/track">Track tickets <ArrowRight aria-hidden="true" size={16} /></Link>
         </div>
 

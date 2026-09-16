@@ -2,9 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { SessionBoundary } from "@/components/session-boundary";
 
-import "./globals.css";
-
-import './product.css';
+import "./design.css";
 
 const description = "Report a public-service issue, reach the right Ugandan institution, and follow the response from submission to resolution.";
 

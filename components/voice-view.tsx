@@ -799,41 +799,39 @@ export function VoiceView({
 
   return (
     <div className={`voice-page ${guestMode ? "guest-live-voice" : ""}`}>
-      <div className={`grid h-full w-full min-h-0 gap-4 ${guestMode ? "max-w-[820px]" : "max-w-[1120px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
-        <section className="voice-stage flex min-h-0 flex-col items-center overflow-hidden rounded-[8px] border border-[#e3e7ef] bg-white px-4 py-4 sm:px-6">
-          <h1 className="voice-title">{guestMode ? "Guest SAUTI Signal" : "SAUTI Signal"}</h1>
-          <div className="voice-status shrink-0"><span className={`online-dot ${state === "error" ? "!bg-[#d94b45]" : ""}`} />{statusText}</div>
-          <p className="voice-hint shrink-0 text-center">{guestMode
-            ? "Speak naturally to explore the issue. Sign in to start a separate secure report you can submit and track."
+      <div className="voice-layout">
+        <section className="voice-stage">
+          <h1 className="voice-title">{guestMode ? "Guest voice" : "Talk to SAUTI1"}</h1>
+          <div className="voice-status"><span className={`online-dot ${state === "error" ? "is-danger" : ""}`} />{statusText}</div>
+          <p className="voice-hint">{guestMode
+            ? "Speak naturally to explore the issue. Sign in to start a secure report you can submit and track."
             : "Speak naturally. Sauti1 will finish each reply before listening for the next detail."}</p>
 
-          <div className="min-h-0 w-full flex-1 overflow-y-auto px-1">
-            <div aria-label={statusText} className="sauti-signal" data-state={state} ref={signalRef} role="img">
-              <div className="sauti-signal-identity">S1</div>
-              <div aria-hidden="true" className="sauti-signal-wave">
-                {Array.from({ length: 13 }, (_, index) => <i key={index} style={{ "--bar-index": index } as React.CSSProperties} />)}
-              </div>
-              <small>{state === "listening" ? "Microphone signal" : state === "speaking" ? "Response signal" : "Secure voice channel"}</small>
+          <div aria-label={statusText} className="sauti-signal" data-state={state} ref={signalRef} role="img">
+            <div className="sauti-signal-identity">S1</div>
+            <div aria-hidden="true" className="sauti-signal-wave">
+              {Array.from({ length: 13 }, (_, index) => <i key={index} style={{ "--bar-index": index } as React.CSSProperties} />)}
             </div>
-
-            <div className="mx-auto -mt-3 max-w-[650px] space-y-2 text-center" aria-live="polite">
-              {inputCaption && <p className="text-[12px] leading-5 text-[#66738a]"><span className="font-bold text-[#273650]">You:</span> {inputCaption}</p>}
-              {outputCaption && <p className="text-[12px] leading-5 text-[#33425c]"><span className="font-bold text-[#1d5eff]">Sauti1:</span> {outputCaption}</p>}
-              {!inputCaption && !outputCaption && <p className="text-[12px] text-[#8b95a6]">Your live conversation will appear here as you speak.</p>}
-            </div>
+            <small>{state === "listening" ? "Listening" : state === "speaking" ? "Speaking" : "Secure voice channel"}</small>
           </div>
 
-          {error && <div className="my-2 w-full max-w-[650px] rounded-[8px] bg-[#fff1f0] px-3 py-2 text-center text-[11px] font-semibold text-[#a53b35]" role="alert">{error}</div>}
+          <div className="voice-captions" aria-live="polite">
+            {inputCaption && <p><span className="voice-caption-who">You</span> {inputCaption}</p>}
+            {outputCaption && <p><span className="voice-caption-who is-ai">Sauti1</span> {outputCaption}</p>}
+            {!inputCaption && !outputCaption && <p className="voice-captions-empty">Your live conversation will appear here as you speak.</p>}
+          </div>
 
-          <div className="flex shrink-0 items-center justify-center gap-3 pt-3">
+          {error && <div className="voice-error" role="alert">{error}</div>}
+
+          <div className="voice-controls">
             {state === "idle" || state === "ended" || state === "error" ? (
-              <button className="inline-flex h-12 items-center gap-2 rounded-[8px] bg-[#155dff] px-5 text-[12px] font-bold text-white" onClick={startSession} type="button"><Mic2 size={18} /> {guestMode ? "Start guest voice" : "Start live voice"}</button>
+              <button className="pill-action primary large" onClick={startSession} type="button"><Mic2 size={18} /> {guestMode ? "Start guest voice" : "Start live voice"}</button>
             ) : state === "submitted" ? (
-              <button className="inline-flex h-11 items-center gap-2 rounded-[8px] bg-[#155dff] px-4 text-[11px] font-bold text-white" onClick={resetConversation} type="button"><RotateCcw size={16} /> Start a new call</button>
+              <button className="pill-action primary" onClick={resetConversation} type="button"><RotateCcw size={16} /> Start a new call</button>
             ) : (
               <>
-                <button aria-label={muted ? "Unmute microphone" : "Mute microphone"} className="grid h-11 w-11 place-items-center rounded-full border border-[#dbe2ec] bg-white text-[#24334f]" onClick={toggleMute} title={muted ? "Unmute microphone" : "Mute microphone"} type="button">{muted ? <MicOff size={19} /> : <Mic2 size={19} />}</button>
-                <button aria-label="End voice conversation" className="grid h-12 w-12 place-items-center rounded-full bg-[#d94b45] text-white" onClick={() => void cancelConversation()} title="End voice conversation" type="button"><PhoneOff size={20} /></button>
+                <button aria-label={muted ? "Unmute microphone" : "Mute microphone"} className="circle-btn" onClick={toggleMute} title={muted ? "Unmute microphone" : "Mute microphone"} type="button">{muted ? <MicOff size={19} /> : <Mic2 size={19} />}</button>
+                <button aria-label="End voice conversation" className="circle-btn is-end" onClick={() => void cancelConversation()} title="End voice conversation" type="button"><PhoneOff size={20} /></button>
                 <span className="voice-audio-indicator" title="Full duplex audio">{state === "connecting" || state === "processing" ? <Loader2 className="is-spinning" size={19} /> : <Volume2 size={19} />}<span className="sr-only">Full duplex audio active</span></span>
               </>
             )}
