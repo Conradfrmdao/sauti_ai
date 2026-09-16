@@ -16,7 +16,10 @@
     "test:domain": "jiti tests/ticket-lifecycle.ts",
     "test:agent:live": "jiti tests/agent.live.ts",
     "test:confirm:live": "jiti tests/confirm-loop.live.ts",
-    "test:latency:live": "jiti tests/model-latency.ts"
+    "test:latency:live": "jiti tests/model-latency.ts",
+    "test:providers": "jiti tests/provider-selection.ts",
+    "test:gemini:bench": "jiti tests/gemini-bench.live.ts",
+    "test": "npm run test:ai && npm run test:domain && npm run test:channels && npm run test:providers"
   },
   "dependencies": {
     "@google/genai": "2.17.1",

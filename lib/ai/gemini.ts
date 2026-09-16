@@ -1,25 +1,86 @@
 /**
- * Gemini reasoning adapter.
+ * Gemini reasoning provider.
  *
- * OpenRouter's free models take 12-27s on a full SAUTI1 turn, which is fine for
- * a text page and unusable on a live call: Gemini Live holds its tongue until
- * this result arrives, so the caller sits in silence for the whole round trip.
+ * This is SAUTI1's primary reasoning path. It is fast enough for a live call --
+ * Gemini Live stays silent until the turn result arrives, so latency here is
+ * heard as dead air by the caller.
  *
- * Voice already depends on GEMINI_API_KEY for the Live API itself, so realtime
- * turns reuse that key for the reasoning step and keep sub-second-to-2s
- * latency. Text keeps running on OpenRouter.
+ * Gemini models return 503 "high demand" often enough that a single model is
+ * not a plan, so requests walk a chain with per-model cooldowns, the same shape
+ * as the OpenRouter provider.
  */
 
 import { GoogleGenAI } from "@google/genai";
 
-import type { CompletionResult } from "./openrouter";
+import type { ChatMessage, CompletionResult } from "./openrouter";
 
-export function geminiReasoningAvailable() {
+export class GeminiUnavailableError extends Error {
+  readonly attempts: { model: string; reason: string }[];
+
+  constructor(attempts: { model: string; reason: string }[]) {
+    super(
+      attempts.length
+        ? `No Gemini model answered. ${attempts.map((item) => `${item.model}: ${item.reason}`).join("; ")}`
+        : "GEMINI_API_KEY is not configured."
+    );
+    this.name = "GeminiUnavailableError";
+    this.attempts = attempts;
+  }
+}
+
+/**
+ * Ordered by measured performance on a real SAUTI1 turn, not by version number.
+ * gemini-3.5-flash-lite: 1.6s average, all behavioural checks passing.
+ * gemini-3.1-flash-lite: 5.6s, also correct -- a usable second choice.
+ * The newer 3.7/3.8 flash models benchmarked as persistently overloaded, so
+ * they sit at the back rather than the front.
+ */
+const DEFAULT_GEMINI_CHAIN = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-3.5-flash",
+];
+
+export function geminiAvailable() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
-export function realtimeGeminiModel() {
-  return process.env.GEMINI_REALTIME_MODEL || "gemini-3.5-flash-lite";
+export function geminiModelChain() {
+  const configured = process.env.GEMINI_MODELS
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return configured?.length ? configured : DEFAULT_GEMINI_CHAIN;
+}
+
+const modelCooldownUntil = new Map<string, number>();
+
+export function resetGeminiCooldownsForTests() {
+  modelCooldownUntil.clear();
+}
+
+function cooldownMsFor(status: number | undefined) {
+  if (status === 429) return 60_000;          // quota
+  if (status === 503) return 20_000;          // "high demand", usually brief
+  if (status === 404 || status === 400) return 10 * 60_000; // wrong model id
+  if (status && status >= 500) return 30_000;
+  return 10_000;
+}
+
+function isCoolingDown(model: string) {
+  const until = modelCooldownUntil.get(model);
+  if (!until) return false;
+  if (until <= Date.now()) {
+    modelCooldownUntil.delete(model);
+    return false;
+  }
+  return true;
+}
+
+function statusOf(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const match = message.match(/"code"\s*:\s*(\d{3})/) ?? message.match(/\b(4\d\d|5\d\d)\b/);
+  return match ? Number(match[1]) : undefined;
 }
 
 type JsonSchema = Record<string, unknown>;
@@ -29,7 +90,7 @@ type JsonSchema = Record<string, unknown>;
  * subset Gemini accepts: no `additionalProperties`, and a nullable type is
  * expressed with a `nullable` flag rather than a type union.
  */
-function toGeminiSchema(schema: JsonSchema): JsonSchema {
+export function toGeminiSchema(schema: JsonSchema): JsonSchema {
   const converted: JsonSchema = {};
 
   for (const [key, value] of Object.entries(schema)) {
@@ -77,40 +138,52 @@ function toGeminiSchema(schema: JsonSchema): JsonSchema {
   return converted;
 }
 
-export async function completeWithGemini(options: {
-  system: string;
-  prompt: string;
+export type GeminiRequest = {
+  messages: ChatMessage[];
   schema?: JsonSchema;
   maxOutputTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  budgetMs?: number;
+  models?: string[];
   validate?: (text: string) => boolean;
-}): Promise<CompletionResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+};
 
-  const model = realtimeGeminiModel();
+function splitMessages(messages: ChatMessage[]) {
+  const system = messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n");
+  const prompt = messages.filter((m) => m.role !== "system").map((m) => m.content).join("\n\n");
+  return { system, prompt };
+}
+
+async function callModel(model: string, request: GeminiRequest, apiKey: string, timeoutMs: number) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 9_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const { system, prompt } = splitMessages(request.messages);
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model,
-      contents: options.prompt,
+      contents: prompt,
       config: {
         abortSignal: controller.signal,
-        systemInstruction: options.system,
-        maxOutputTokens: options.maxOutputTokens ?? 1400,
-        temperature: options.temperature ?? 0.4,
-        responseMimeType: "application/json",
-        ...(options.schema ? { responseSchema: toGeminiSchema(options.schema) } : {}),
+        systemInstruction: system || undefined,
+        maxOutputTokens: request.maxOutputTokens ?? 1400,
+        temperature: request.temperature ?? 0.4,
+        // Only constrain the output when a schema was asked for. Guest replies
+        // are plain prose, and forcing JSON on them returns a quoted string.
+        ...(request.schema
+          ? {
+              responseMimeType: "application/json",
+              responseSchema: toGeminiSchema(request.schema),
+            }
+          : {}),
       },
     });
 
     const text = response.text?.trim();
     if (!text) throw new Error("Empty Gemini completion.");
-    if (options.validate && !options.validate(text)) {
+    if (request.validate && !request.validate(text)) {
       throw new Error("Gemini completion failed validation.");
     }
 
@@ -125,8 +198,47 @@ export async function completeWithGemini(options: {
         reasoningTokens: usage?.thoughtsTokenCount,
         totalTokens: usage?.totalTokenCount,
       },
-    };
+    } satisfies CompletionResult;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Runs the Gemini chain until a model answers usefully. */
+export async function completeWithGemini(request: GeminiRequest): Promise<CompletionResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new GeminiUnavailableError([]);
+
+  const chain = request.models?.length ? request.models : geminiModelChain();
+  const timeoutMs = request.timeoutMs ?? 12_000;
+  const deadline = Date.now() + (request.budgetMs ?? Number.POSITIVE_INFINITY);
+  const attempts: { model: string; reason: string }[] = [];
+
+  const ready = chain.filter((model) => !isCoolingDown(model));
+  const order = ready.length ? ready : chain;
+
+  for (const model of order) {
+    const remaining = deadline - Date.now();
+    if (remaining < 1_200) {
+      attempts.push({ model, reason: "skipped, latency budget exhausted" });
+      break;
+    }
+
+    const attemptTimeout = Math.min(timeoutMs, remaining);
+    try {
+      return await callModel(model, request, apiKey, attemptTimeout);
+    } catch (error) {
+      const reason = error instanceof Error
+        ? (error.name === "AbortError" ? `timed out after ${attemptTimeout}ms` : error.message.slice(0, 200))
+        : String(error);
+      // A rejected-by-validation answer is the model's fault, not an outage;
+      // do not cool the model down for it.
+      if (!/failed validation/i.test(reason)) {
+        modelCooldownUntil.set(model, Date.now() + cooldownMsFor(statusOf(error)));
+      }
+      attempts.push({ model, reason });
+    }
+  }
+
+  throw new GeminiUnavailableError(attempts);
 }

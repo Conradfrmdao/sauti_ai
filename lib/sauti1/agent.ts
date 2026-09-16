@@ -9,14 +9,8 @@
  * institution is responsible -- working that out is SAUTI1's job.
  */
 
-import {
-  complete,
-  parseJsonCompletion,
-  ProviderUnavailableError,
-  type ModelUsage,
-} from "../ai/openrouter";
-
-import { completeWithGemini, geminiReasoningAvailable } from "../ai/gemini";
+import { parseJsonCompletion, type ModelUsage } from "../ai/openrouter";
+import { NoProviderAvailableError, runReasoning } from "../ai/provider";
 import { intakeFieldLabel } from "./intake-fields";
 import type {
   CitizenContext,
@@ -476,7 +470,7 @@ export async function runAgentTurn(options: {
   const evidence = options.evidence ?? [];
   const isRealtime = options.latencyMode === "realtime";
 
-  if (!catalog.length) throw new ProviderUnavailableError([]);
+  if (!catalog.length) throw new NoProviderAvailableError([]);
 
   const accumulated = `${previous?.description ?? ""} ${message}`.trim();
   const informational = looksInformational(message);
@@ -533,37 +527,13 @@ export async function runAgentTurn(options: {
     }
   };
 
-  const messages = [
-    { role: "system" as const, content: SYSTEM_PROMPT },
-    { role: "user" as const, content: userPrompt },
-  ];
-
-  let result;
-  let usedProvider: ReportDraft["engine"] = "openrouter";
-  // A live turn goes to Gemini when its key is present: the free OpenRouter
-  // models measure 12-27s on this prompt, and the caller is waiting in silence.
-  if (isRealtime && geminiReasoningAvailable()) {
-    try {
-      result = await completeWithGemini({
-        system: SYSTEM_PROMPT,
-        prompt: userPrompt,
-        schema: turnSchema,
-        maxOutputTokens: realtimeMaxOutputTokens(),
-        temperature: 0.4,
-        timeoutMs: realtimeTurnTimeoutMs(),
-        validate: validateTurn,
-      });
-      usedProvider = "gemini";
-    } catch (error) {
-      console.warn(
-        "Realtime Gemini turn failed; trying OpenRouter.",
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-  }
-
-  result ??= await complete({
-    messages,
+  // One call, whichever provider is configured. Gemini by default; OpenRouter
+  // only when explicitly enabled. The agent does not care which answered.
+  const result = await runReasoning({
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userPrompt },
+    ],
     schema: { name: "sauti1_turn", schema: turnSchema },
     maxOutputTokens: isRealtime ? realtimeMaxOutputTokens() : 1400,
     temperature: 0.4,
@@ -571,6 +541,7 @@ export async function runAgentTurn(options: {
     budgetMs: isRealtime ? realtimeTurnBudgetMs() : undefined,
     validate: validateTurn,
   });
+  const usedProvider: ReportDraft["engine"] = result.provider;
 
   const decision = parseJsonCompletion<TurnDecision>(result.text);
 

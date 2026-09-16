@@ -1,4 +1,4 @@
-import { complete, fastModelChain } from "../ai/openrouter";
+import { runReasoning } from "../ai/provider";
 
 import type { ReportDraft } from "./report-ai";
 
@@ -9,7 +9,7 @@ type GuestTurn = {
 
 export type GuestReply = {
   reply: string;
-  engine: "openrouter" | "fallback";
+  engine: "openrouter" | "gemini" | "fallback";
   modelUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -66,12 +66,11 @@ export async function createGuestConversationReply(
   ].filter(Boolean).join("\n\n");
 
   try {
-    const result = await complete({
+    const result = await runReasoning({
       messages: [
         { role: "system", content: GUEST_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-      models: fastModelChain(),
       maxOutputTokens: 220,
       temperature: 0.5,
       timeoutMs: Math.min(9_000, Math.max(3_000, Number(process.env.GUEST_TIMEOUT_MS) || 7_000)),
@@ -80,7 +79,7 @@ export async function createGuestConversationReply(
 
     return {
       reply: result.text.trim(),
-      engine: "openrouter",
+      engine: result.provider,
       modelUsage: {
         inputTokens: result.usage?.inputTokens,
         outputTokens: result.usage?.outputTokens,
