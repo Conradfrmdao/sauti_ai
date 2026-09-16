@@ -4,9 +4,9 @@ import { loadEnvConfig } from "@next/env";
 
 import {
   InstitutionCatalogItem,
-  resetGeminiBackoffForTests,
   understandCitizenMessage,
 } from "../lib/sauti1/report-ai";
+import { resetProviderCooldownsForTests } from "../lib/ai/openrouter";
 
 loadEnvConfig(process.cwd());
 
@@ -105,7 +105,7 @@ async function understand(message: string) {
 
 async function run() {
   assert.ok(process.env.GEMINI_API_KEY, "GEMINI_API_KEY is required for the live AI scenarios.");
-  resetGeminiBackoffForTests();
+  resetProviderCooldownsForTests();
 
   const greeting = await understand("Hello, how are you doing?");
   assert.equal(greeting.engine, "gemini");

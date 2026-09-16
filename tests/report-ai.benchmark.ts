@@ -6,9 +6,9 @@ import { loadEnvConfig } from "@next/env";
 import {
   InstitutionCatalogItem,
   ReportDraft,
-  resetGeminiBackoffForTests,
   understandCitizenMessage,
 } from "../lib/sauti1/report-ai";
+import { resetProviderCooldownsForTests } from "../lib/ai/openrouter";
 
 loadEnvConfig(process.cwd());
 
@@ -219,7 +219,7 @@ function evaluate(scenario: Scenario, draft: ReportDraft) {
 async function runEffort(thinkingLevel: "low" | "medium") {
   process.env.GEMINI_THINKING_LEVEL = thinkingLevel;
   process.env.GEMINI_TURN_TIMEOUT_MS = "30000";
-  resetGeminiBackoffForTests();
+  resetProviderCooldownsForTests();
   const durations: number[] = [];
   const inputTokens: number[] = [];
   const outputTokens: number[] = [];
@@ -234,7 +234,7 @@ async function runEffort(thinkingLevel: "low" | "medium") {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) {
         await wait(70_000);
-        resetGeminiBackoffForTests();
+        resetProviderCooldownsForTests();
         startedAt = performance.now();
       }
       draft = await understandCitizenMessage(

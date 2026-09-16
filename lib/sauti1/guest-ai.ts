@@ -1,4 +1,4 @@
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { complete, fastModelChain } from "../ai/openrouter";
 
 import type { ReportDraft } from "./report-ai";
 
@@ -9,7 +9,7 @@ type GuestTurn = {
 
 export type GuestReply = {
   reply: string;
-  engine: "gemini" | "fallback";
+  engine: "openrouter" | "fallback";
   modelUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -18,6 +18,10 @@ export type GuestReply = {
   };
 };
 
+/**
+ * Guest mode is public and unauthenticated, so the reply must never solicit
+ * personal data or imply that anything was stored.
+ */
 function validGuestReply(value: string | undefined) {
   const reply = value?.trim();
   if (!reply || reply.length > 500) return false;
@@ -26,18 +30,20 @@ function validGuestReply(value: string | undefined) {
   return true;
 }
 
-function guestThinkingLevel() {
-  switch (process.env.GEMINI_GUEST_THINKING_LEVEL?.toLowerCase()) {
-    case "minimal":
-      return ThinkingLevel.MINIMAL;
-    case "medium":
-      return ThinkingLevel.MEDIUM;
-    case "high":
-      return ThinkingLevel.HIGH;
-    default:
-      return ThinkingLevel.LOW;
-  }
-}
+const GUEST_SYSTEM_PROMPT = `You are SAUTI1 in public preview mode, helping a
+visitor who has not signed in.
+
+Reply in at most 60 words, warm and direct, the way a knowledgeable neighbour
+would. Build on what the visitor already said rather than restarting. Use the
+verified understanding below as grounding for which service area this belongs to
+- work that out yourself and never ask the visitor which institution, company or
+agency is responsible.
+
+Never claim anything was submitted, saved or filed: signing in is what makes a
+real report. Never ask for a name, phone number, account number, reference
+number, password or PIN.
+
+Return only the reply text, with no quotes, labels or formatting.`;
 
 export async function createGuestConversationReply(
   history: GuestTurn[],
@@ -45,66 +51,48 @@ export async function createGuestConversationReply(
   draft: ReportDraft
 ): Promise<GuestReply> {
   const fallback: GuestReply = { reply: draft.assistantReply, engine: "fallback" };
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return fallback;
 
-  const timeoutMs = Math.min(
-    6_000,
-    Math.max(2_000, Number(process.env.GEMINI_GUEST_TIMEOUT_MS) || 4_500)
-  );
-  const prompt = JSON.stringify({
-    recentConversation: history.slice(-4),
-    latestCitizenMessage: latestMessage,
-    verifiedUnderstanding: {
+  const prompt = [
+    history.length
+      ? `Recent conversation:\n${history.slice(-4).map((turn) => `${turn.role === "user" ? "Visitor" : "SAUTI1"}: ${turn.text}`).join("\n")}`
+      : "",
+    `Visitor just said:\n${latestMessage}`,
+    `Verified understanding:\n${JSON.stringify({
       intent: draft.intent,
-      institution: draft.institutionSlug ? draft.institutionName : null,
+      serviceArea: draft.institutionSlug ? draft.institutionName : null,
       category: draft.category,
       location: draft.locationText,
-    },
-    baselineReply: draft.assistantReply,
-  });
-  const abortController = new AbortController();
-  const abortTimeout = setTimeout(() => abortController.abort(), timeoutMs);
+    })}`,
+  ].filter(Boolean).join("\n\n");
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_GUEST_MODEL || "gemini-3.5-flash-lite",
-      contents: prompt,
-      config: {
-        abortSignal: abortController.signal,
-        httpOptions: { timeout: 10_000 },
-        maxOutputTokens: 180,
-        temperature: 0.35,
-        thinkingConfig: {
-          thinkingLevel: guestThinkingLevel(),
-        },
-        systemInstruction: `You are SAUTI1 AI in public guest mode. Reply naturally and concisely in no more than 70 words. Be warm, direct and useful. Use the verified understanding and baseline reply as grounding. Never claim a report was submitted or saved. Do not request names, phone numbers, account identifiers, passwords or other private details. Invite the citizen to describe the public-service issue they need help with when appropriate. Return only the reply text.`,
-      },
+    const result = await complete({
+      messages: [
+        { role: "system", content: GUEST_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      models: fastModelChain(),
+      maxOutputTokens: 220,
+      temperature: 0.5,
+      timeoutMs: Math.min(9_000, Math.max(3_000, Number(process.env.GUEST_TIMEOUT_MS) || 7_000)),
+      validate: validGuestReply,
     });
-    const reply = response.text?.trim();
-    if (!validGuestReply(reply)) return fallback;
 
-    const usage = response.usageMetadata;
     return {
-      reply: reply as string,
-      engine: "gemini",
-      modelUsage: usage
-        ? {
-            inputTokens: usage.promptTokenCount,
-            outputTokens: usage.candidatesTokenCount,
-            thoughtTokens: usage.thoughtsTokenCount,
-            totalTokens: usage.totalTokenCount,
-          }
-        : undefined,
+      reply: result.text.trim(),
+      engine: "openrouter",
+      modelUsage: {
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
+        thoughtTokens: result.usage?.reasoningTokens,
+        totalTokens: result.usage?.totalTokens,
+      },
     };
   } catch (error) {
     console.warn(
-      "Guest Gemini reply unavailable; using deterministic response.",
+      "Guest reply unavailable; using deterministic response.",
       error instanceof Error ? error.message : String(error)
     );
     return fallback;
-  } finally {
-    clearTimeout(abortTimeout);
   }
 }

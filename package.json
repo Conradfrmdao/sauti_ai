@@ -13,7 +13,8 @@
     "test:ai": "jiti tests/report-ai.scenarios.ts",
     "test:ai:live": "jiti tests/report-ai.live.ts",
     "test:ai:benchmark": "jiti tests/report-ai.benchmark.ts",
-    "test:domain": "jiti tests/ticket-lifecycle.ts"
+    "test:domain": "jiti tests/ticket-lifecycle.ts",
+    "test:agent:live": "jiti tests/agent.live.ts"
   },
   "dependencies": {
     "@google/genai": "2.17.1",
