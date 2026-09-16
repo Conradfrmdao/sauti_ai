@@ -10,7 +10,15 @@ import { NextResponse } from "next/server";
 import { isCitizenWorkspace } from "@/lib/auth/workspace";
 import { createClient } from "@/lib/supabase/server";
 
-const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview";
+/**
+ * Live audio model chain. gemini-3.8-live is the newest general Live model on
+ * this key; the preview behind it is the long-known-good one. The 3.8 text
+ * models were returning 503 "high demand" when this was set, so a session must
+ * be able to fall back rather than refuse to start a call.
+ */
+const liveModels = (process.env.GEMINI_LIVE_MODEL || "gemini-3.8-live")
+  .split(",").map((item) => item.trim()).filter(Boolean)
+  .concat(process.env.GEMINI_LIVE_FALLBACK_MODEL || "gemini-3.1-flash-live-preview");
 
 const liveSystemInstruction = `You are the realtime voice interface for SAUTI1 AI, a Ugandan citizen service reporting assistant.
 
@@ -42,60 +50,75 @@ export async function POST() {
   try {
     const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1alpha" } });
     const now = Date.now();
-    const token = await ai.authTokens.create({
-      config: {
-        uses: 1,
-        newSessionExpireTime: new Date(now + 60_000).toISOString(),
-        expireTime: new Date(now + 30 * 60_000).toISOString(),
-        liveConnectConstraints: {
-          model: liveModel,
+    let token: Awaited<ReturnType<typeof ai.authTokens.create>> | undefined;
+    let liveModel = liveModels[0];
+    let lastError: unknown;
+
+    for (const candidate of liveModels) {
+      liveModel = candidate;
+      try {
+        token = await ai.authTokens.create({
           config: {
-            responseModalities: [Modality.AUDIO],
-            temperature: 0.35,
-            speechConfig: {
-              languageCode: "en-US",
-              voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-            },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
-            realtimeInputConfig: {
-              // Barge-in. NO_INTERRUPTION made the assistant talk over the
-              // citizen and ignore them until it had finished its own turn.
-              activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
-              automaticActivityDetection: {
-                // HIGH on both ends: notice the citizen has started speaking
-                // sooner, and decide they have finished sooner. LOW added
-                // seconds of dead air before the turn even began.
-                startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
-                endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
-                prefixPaddingMs: 200,
-                silenceDurationMs: 450,
+            uses: 1,
+            newSessionExpireTime: new Date(now + 60_000).toISOString(),
+            expireTime: new Date(now + 30 * 60_000).toISOString(),
+            liveConnectConstraints: {
+              model: liveModel,
+              config: {
+                responseModalities: [Modality.AUDIO],
+                temperature: 0.35,
+                speechConfig: {
+                  languageCode: "en-US",
+                  voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+                },
+                inputAudioTranscription: {},
+                outputAudioTranscription: {},
+                realtimeInputConfig: {
+                  // Barge-in. NO_INTERRUPTION made the assistant talk over the
+                  // citizen and ignore them until it had finished its own turn.
+                  activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+                  automaticActivityDetection: {
+                    // HIGH on both ends: notice the citizen has started speaking
+                    // sooner, and decide they have finished sooner. LOW added
+                    // seconds of dead air before the turn even began.
+                    startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+                    endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_HIGH,
+                    prefixPaddingMs: 200,
+                    silenceDurationMs: 450,
+                  },
+                },
+                systemInstruction: liveSystemInstruction,
+                tools: [{
+                  functionDeclarations: [{
+                    name: "process_citizen_turn",
+                    description: "Send one complete citizen utterance to the trusted SAUTI1 reporting workflow before replying.",
+                    parametersJsonSchema: {
+                      type: "object",
+                      properties: {
+                        message: {
+                          type: "string",
+                          description: "A faithful transcript of the citizen's complete latest utterance.",
+                        },
+                      },
+                      required: ["message"],
+                      additionalProperties: false,
+                    },
+                  }],
+                }],
               },
             },
-            systemInstruction: liveSystemInstruction,
-            tools: [{
-              functionDeclarations: [{
-                name: "process_citizen_turn",
-                description: "Send one complete citizen utterance to the trusted SAUTI1 reporting workflow before replying.",
-                parametersJsonSchema: {
-                  type: "object",
-                  properties: {
-                    message: {
-                      type: "string",
-                      description: "A faithful transcript of the citizen's complete latest utterance.",
-                    },
-                  },
-                  required: ["message"],
-                  additionalProperties: false,
-                },
-              }],
-            }],
           },
-        },
-      },
-    });
+        });
 
-    if (!token.name) throw new Error("Gemini did not return a Live session token.");
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(`Live model ${candidate} unavailable; trying the next.`,
+          error instanceof Error ? error.message.slice(0, 200) : String(error));
+      }
+    }
+
+    if (!token?.name) throw lastError ?? new Error("Gemini did not return a Live session token.");
     return NextResponse.json({ token: token.name, model: liveModel });
   } catch (error) {
     console.error("Could not create Gemini Live token", error);
