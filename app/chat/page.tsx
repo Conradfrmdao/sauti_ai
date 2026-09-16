@@ -77,7 +77,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
           ),
           tickets (
             id, ticket_code, status, acknowledged_at,
-            institutions (name, short_name),
+            institutions!tickets_institution_id_fkey (name, short_name),
             ticket_events (event_type, note, created_at)
           )
         `)

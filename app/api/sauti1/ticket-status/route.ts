@@ -58,7 +58,7 @@ export async function GET(
           ticket_code,
           status,
           acknowledged_at,
-          institutions (
+          institutions!tickets_institution_id_fkey (
             name,
             short_name
           ),

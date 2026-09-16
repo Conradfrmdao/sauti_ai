@@ -41,7 +41,7 @@ export async function updateTicketStatus(
     supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     supabase
       .from("tickets")
-      .select("ticket_code, institutions(name, short_name)")
+      .select("ticket_code, institutions!tickets_institution_id_fkey(name, short_name)")
       .eq("id", ticketId)
       .maybeSingle(),
   ]);

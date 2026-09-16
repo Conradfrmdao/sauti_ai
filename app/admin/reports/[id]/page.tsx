@@ -30,7 +30,7 @@ export default async function AdminReportDetailPage({ params }: { params: Promis
       id, report_id, institution_id, ticket_code, status, priority, category,
       assigned_to, created_at, updated_at, acknowledged_at, resolved_at,
       transfer_reason, transfer_requested_at, suggested_institution_id,
-      institutions(name, short_name),
+      institutions!tickets_institution_id_fkey(name, short_name),
       reports(id, description, ai_summary, detected_category, source, location_text, intake_data, confirmed_at),
       ticket_events(id, event_type, from_status, to_status, note, created_at)
     `).eq("id", id).order("created_at", { referencedTable: "ticket_events", ascending: false }).maybeSingle(),

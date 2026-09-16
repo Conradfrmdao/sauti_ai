@@ -17,7 +17,7 @@ export default async function TrackPage() {
     .from("tickets")
     .select(`
       id, ticket_code, status, created_at,
-      institutions (name, short_name),
+      institutions!tickets_institution_id_fkey (name, short_name),
       reports!inner (user_id, ai_summary, description, source, detected_category),
       ticket_events (id, event_type, note, created_at)
     `)

@@ -32,7 +32,7 @@ export default async function NotificationsPage() {
     .from("ticket_events")
     .select(`
       id, event_type, note, created_at,
-      tickets (id, ticket_code, institutions(name, short_name))
+      tickets (id, ticket_code, institutions!tickets_institution_id_fkey(name, short_name))
     `)
     .in("ticket_id", ownedTicketIds.length ? ownedTicketIds : ["00000000-0000-0000-0000-000000000000"])
     .order("created_at", { ascending: false })

@@ -40,7 +40,7 @@ export default async function AdminPage() {
       .is("reviewed_at", null),
     supabase.from("tickets").select(`
       id, ticket_code, status, priority, category, created_at,
-      institutions(name, short_name),
+      institutions!tickets_institution_id_fkey(name, short_name),
       reports(source, ai_summary, description, location_text)
     `).order("created_at", { ascending: false }).limit(10),
     supabase.from("institutions").select("id, status, onboarding_state, verified"),

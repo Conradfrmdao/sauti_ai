@@ -32,7 +32,7 @@ export default async function AdminReportsPage({
 
   let query = supabase.from("tickets").select(`
     id, ticket_code, status, priority, category, created_at,
-    institutions(id, name, short_name),
+    institutions!tickets_institution_id_fkey(id, name, short_name),
     reports!inner(source, ai_summary, description, location_text)
   `, { count: "exact" });
   if (status === "open") query = query.not("status", "in", "(closed,cancelled)");

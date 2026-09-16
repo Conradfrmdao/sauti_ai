@@ -321,7 +321,7 @@ function previousDraftFrom(row: Awaited<ReturnType<typeof loadDraftReport>>): Pa
 
 async function ticketForConversation(supabase: SupabaseClient, conversationId: string) {
   const { data, error } = await supabase.from("reports")
-    .select("tickets (id, ticket_code, status, institution_id, institutions (name, short_name))")
+    .select("tickets (id, ticket_code, status, institution_id, institutions!tickets_institution_id_fkey (name, short_name))")
     .eq("conversation_id", conversationId).order("created_at", { ascending: false })
     .limit(1).maybeSingle();
   if (error) throw new Error(`Could not load channel ticket: ${error.message}`);

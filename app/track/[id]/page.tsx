@@ -28,7 +28,7 @@ export default async function TicketDetailPage({ params }: { params: Promise<{ i
     .select(`
       id, report_id, ticket_code, status, priority, category, created_at, updated_at,
       acknowledged_at, resolved_at, resolution_note, resolution_proposed_at,
-      institutions (name, short_name, sector, contact_phone, contact_email, website_url),
+      institutions!tickets_institution_id_fkey (name, short_name, sector, contact_phone, contact_email, website_url),
       reports!inner (id, user_id, description, ai_summary, detected_category, location_text, intake_data, source, ai_confidence, confirmed_at),
       ticket_events (id, event_type, from_status, to_status, note, created_at)
     `)
