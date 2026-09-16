@@ -965,8 +965,16 @@ input:focus, textarea:focus, select:focus {
 }
 .guest-privacy strong { color: var(--muted); font-weight: 650; }
 
-/* Once a conversation starts, drop the hero and let the thread own the space. */
+/*
+ * Once a conversation starts the alternatives stop being useful: the visitor
+ * has chosen text. Collapsing them hands the screen back to the thread and
+ * keeps the composer on the bottom edge where a chat composer belongs.
+ */
 .guest-main.has-conversation .guest-thread { justify-content: flex-start; }
+.guest-main.has-conversation .guest-or,
+.guest-main.has-conversation .guest-voice-cta,
+.guest-main.has-conversation .channel-access,
+.guest-main.has-conversation .guest-suggestions { display: none; }
 
 /* ==========================================================================
    VOICE -- the orb
