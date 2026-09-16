@@ -11,14 +11,17 @@ import { isCitizenWorkspace } from "@/lib/auth/workspace";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Live audio model chain. gemini-3.8-live is the newest general Live model on
- * this key; the preview behind it is the long-known-good one. The 3.8 text
- * models were returning 503 "high demand" when this was set, so a session must
- * be able to fall back rather than refuse to start a call.
+ * Live audio model chain.
+ *
+ * gemini-3.1-flash-live-preview is the trusted default: gemini-3.8-live was
+ * tried in production and was slower and noticeably worse at following the
+ * conversation, so newness is not the deciding factor here. The chain exists so
+ * an overloaded model degrades to a working call rather than refusing to start
+ * one; the fallback is always appended.
  */
-const liveModels = (process.env.GEMINI_LIVE_MODEL || "gemini-3.8-live")
+const liveModels = (process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview")
   .split(",").map((item) => item.trim()).filter(Boolean)
-  .concat(process.env.GEMINI_LIVE_FALLBACK_MODEL || "gemini-3.1-flash-live-preview");
+  .concat(process.env.GEMINI_LIVE_FALLBACK_MODEL || "gemini-2.5-flash-native-audio-latest");
 
 const liveSystemInstruction = `You are the realtime voice interface for SAUTI1 AI, a Ugandan citizen service reporting assistant.
 
