@@ -1182,7 +1182,8 @@ export async function understandCitizenMessage(
   locations: KnownLocation[],
   previous?: Partial<ReportDraft>,
   citizen?: CitizenContext,
-  evidence: ReportEvidenceInput[] = []
+  evidence: ReportEvidenceInput[] = [],
+  latencyMode: "standard" | "realtime" = "standard"
 ): Promise<ReportDraft> {
   const replacement = reportReplacementMessage(latestMessage);
   const currentMessage = replacement || latestMessage;
@@ -1197,8 +1198,10 @@ export async function understandCitizenMessage(
       previous: currentDraft,
       citizen,
       evidence,
+      latencyMode,
     });
-    return { ...draft, engine: "openrouter" };
+    // The agent reports which provider actually answered.
+    return draft;
   } catch (error) {
     // Every model in the chain failed. The citizen still gets a useful turn:
     // deterministic routing and a grounded question, just not a reasoned one.

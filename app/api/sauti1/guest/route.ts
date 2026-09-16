@@ -159,7 +159,12 @@ export async function POST(request: Request) {
     message,
     guestInstitutionCatalog,
     guestKnownLocations,
-    cleanContext(body.context)
+    cleanContext(body.context),
+    undefined,
+    [],
+    // Guest is a public try-it surface, and guest voice runs through here too:
+    // a fast answer matters more than a deep one.
+    "realtime"
   );
   const nextQuestionField = draft.semanticState.nextQuestionField || "";
   const accountOnlyQuestion = /(?:name|phone|account|meter|reference|candidate|application|case|person)/i

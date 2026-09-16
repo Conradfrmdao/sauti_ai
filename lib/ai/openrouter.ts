@@ -124,7 +124,15 @@ type CompletionOptions = {
   schema?: { name: string; schema: Record<string, unknown> };
   maxOutputTokens?: number;
   temperature?: number;
+  /** Per-model timeout. */
   timeoutMs?: number;
+  /**
+   * Total wall-clock budget across the whole chain. Without this a three-model
+   * chain can spend 3x timeoutMs before giving up, which is fine for a page
+   * request and far too slow for a live voice turn where the caller is sitting
+   * in silence waiting for a reply.
+   */
+  budgetMs?: number;
   /** Rejects a syntactically valid but useless answer so the chain continues. */
   validate?: (text: string) => boolean;
 };
@@ -246,6 +254,8 @@ export async function complete(options: CompletionOptions): Promise<CompletionRe
   const chain = options.models?.length ? options.models : reasoningModelChain();
   const timeoutMs = options.timeoutMs
     ?? (Number(process.env.OPENROUTER_TIMEOUT_MS) || 28_000);
+  const budgetMs = options.budgetMs ?? Number.POSITIVE_INFINITY;
+  const deadline = Date.now() + budgetMs;
   const attempts: { model: string; reason: string }[] = [];
 
   const ready = chain.filter((model) => !isCoolingDown(model));
@@ -253,12 +263,21 @@ export async function complete(options: CompletionOptions): Promise<CompletionRe
   const order = ready.length ? ready : chain;
 
   for (const model of order) {
+    const remaining = deadline - Date.now();
+    // Not enough of the budget left to be worth another round trip: stop here
+    // so the caller can fall back while the answer is still useful.
+    if (remaining < 1_500) {
+      attempts.push({ model, reason: "skipped, latency budget exhausted" });
+      break;
+    }
+
+    const attemptTimeout = Math.min(timeoutMs, remaining);
     try {
-      return await callModel(model, options, apiKey, timeoutMs);
+      return await callModel(model, options, apiKey, attemptTimeout);
     } catch (error) {
       const status = (error as { status?: number }).status;
       const reason = error instanceof Error
-        ? (error.name === "AbortError" ? `timed out after ${timeoutMs}ms` : error.message)
+        ? (error.name === "AbortError" ? `timed out after ${attemptTimeout}ms` : error.message)
         : String(error);
       markUnavailable(model, status, reason);
       attempts.push({ model, reason });

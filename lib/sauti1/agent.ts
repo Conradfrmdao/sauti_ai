@@ -16,6 +16,7 @@ import {
   type ModelUsage,
 } from "../ai/openrouter";
 
+import { completeWithGemini, geminiReasoningAvailable } from "../ai/gemini";
 import { intakeFieldLabel } from "./intake-fields";
 import type {
   CitizenContext,
@@ -345,9 +346,25 @@ const INTERNAL_FACT_KEYS = new Set([
   "ready_to_confirm",
 ]);
 
-function sanitizeFacts(facts: Record<string, string> | undefined, citizen?: CitizenContext) {
+/**
+ * Accepts either a string map or an array of {key, value} pairs. Gemini cannot
+ * express a free-form map in its schema, so its adapter returns pairs; a bare
+ * string would otherwise be iterated one character at a time.
+ */
+function factEntries(facts: unknown): [string, unknown][] {
+  if (Array.isArray(facts)) {
+    return facts
+      .filter((item): item is { key: string; value: unknown } =>
+        Boolean(item) && typeof item === "object" && typeof (item as { key?: unknown }).key === "string")
+      .map((item) => [item.key, item.value]);
+  }
+  if (facts && typeof facts === "object") return Object.entries(facts as Record<string, unknown>);
+  return [];
+}
+
+function sanitizeFacts(facts: unknown, citizen?: CitizenContext) {
   const clean: Record<string, string> = {};
-  for (const [key, value] of Object.entries(facts ?? {})) {
+  for (const [key, value] of factEntries(facts)) {
     const text = typeof value === "string" ? value.trim() : "";
     if (!text || text.length > 600) continue;
     if (/^(?:unknown|none|n\/a|null|undefined|not provided|not specified)$/i.test(text)) continue;
@@ -370,6 +387,30 @@ export type AgentResult = {
  * Runs one conversational turn. Throws ProviderUnavailableError when no model
  * in the chain answered, so the caller can fall back deterministically.
  */
+/**
+ * A spoken turn has to come back while the pause still reads as a pause. Past
+ * roughly ten seconds the caller assumes the line is dead, so a realtime turn
+ * gives up on the model and falls back to deterministic routing rather than
+ * leaving them in silence.
+ */
+function realtimeTurnBudgetMs() {
+  return Math.min(20_000, Math.max(4_000, Number(process.env.REALTIME_TURN_BUDGET_MS) || 14_000));
+}
+
+function realtimeTurnTimeoutMs() {
+  return Math.min(realtimeTurnBudgetMs(), Number(process.env.REALTIME_MODEL_TIMEOUT_MS) || 12_000);
+}
+
+/**
+ * Reasoning tokens dominate latency on the free models, and they are billed
+ * against max_tokens. Measured on the same prompt, trimming the visible budget
+ * takes the fastest model from ~20s to ~8s, which is the difference between a
+ * usable spoken turn and a caller assuming the line dropped.
+ */
+function realtimeMaxOutputTokens() {
+  return Math.max(500, Number(process.env.REALTIME_MAX_OUTPUT_TOKENS) || 800);
+}
+
 export async function runAgentTurn(options: {
   transcript: AgentTurn[];
   message: string;
@@ -378,9 +419,17 @@ export async function runAgentTurn(options: {
   previous?: Partial<ReportDraft>;
   citizen?: CitizenContext;
   evidence?: ReportEvidenceInput[];
+  /**
+   * "realtime" means somebody is waiting in silence for this turn -- a live
+   * voice caller, or a guest trying the product. Those turns get a hard
+   * latency budget and give up on the model early rather than stalling the
+   * conversation; a fast deterministic answer beats a slow perfect one.
+   */
+  latencyMode?: "standard" | "realtime";
 }): Promise<AgentResult> {
   const { transcript, message, catalog, previous, citizen } = options;
   const evidence = options.evidence ?? [];
+  const isRealtime = options.latencyMode === "realtime";
 
   if (!catalog.length) throw new ProviderUnavailableError([]);
 
@@ -420,22 +469,52 @@ export async function runAgentTurn(options: {
     .filter(Boolean)
     .join("\n\n");
 
-  const result = await complete({
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userPrompt },
-    ],
+  const validateTurn = (text: string) => {
+    try {
+      const candidate = parseJsonCompletion<Partial<TurnDecision>>(text);
+      return typeof candidate.reply === "string" && replyIsSafe(candidate.reply);
+    } catch {
+      return false;
+    }
+  };
+
+  const messages = [
+    { role: "system" as const, content: SYSTEM_PROMPT },
+    { role: "user" as const, content: userPrompt },
+  ];
+
+  let result;
+  let usedProvider: ReportDraft["engine"] = "openrouter";
+  // A live turn goes to Gemini when its key is present: the free OpenRouter
+  // models measure 12-27s on this prompt, and the caller is waiting in silence.
+  if (isRealtime && geminiReasoningAvailable()) {
+    try {
+      result = await completeWithGemini({
+        system: SYSTEM_PROMPT,
+        prompt: userPrompt,
+        schema: turnSchema,
+        maxOutputTokens: realtimeMaxOutputTokens(),
+        temperature: 0.4,
+        timeoutMs: realtimeTurnTimeoutMs(),
+        validate: validateTurn,
+      });
+      usedProvider = "gemini";
+    } catch (error) {
+      console.warn(
+        "Realtime Gemini turn failed; trying OpenRouter.",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+  }
+
+  result ??= await complete({
+    messages,
     schema: { name: "sauti1_turn", schema: turnSchema },
-    maxOutputTokens: 1400,
+    maxOutputTokens: isRealtime ? realtimeMaxOutputTokens() : 1400,
     temperature: 0.4,
-    validate: (text) => {
-      try {
-        const candidate = parseJsonCompletion<Partial<TurnDecision>>(text);
-        return typeof candidate.reply === "string" && replyIsSafe(candidate.reply);
-      } catch {
-        return false;
-      }
-    },
+    timeoutMs: isRealtime ? realtimeTurnTimeoutMs() : undefined,
+    budgetMs: isRealtime ? realtimeTurnBudgetMs() : undefined,
+    validate: validateTurn,
   });
 
   const decision = parseJsonCompletion<TurnDecision>(result.text);
@@ -534,7 +613,7 @@ export async function runAgentTurn(options: {
     // The model's own words reach the citizen. This is the whole point.
     assistantReply: decision.reply.trim(),
     semanticState,
-    engine: "gemini",
+    engine: usedProvider,
     modelUsage: {
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,

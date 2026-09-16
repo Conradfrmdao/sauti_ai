@@ -82,6 +82,7 @@ async function turn(
   const started = Date.now();
   const { draft, usage } = await runAgentTurn({
     transcript, message, catalog, locations: [], previous, citizen,
+    latencyMode: (process.env.PROBE_LATENCY_MODE as "standard" | "realtime") || "standard",
   });
   console.log(`\n=== ${label} ===`);
   console.log(`citizen : ${message}`);

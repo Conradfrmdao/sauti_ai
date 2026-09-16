@@ -52,6 +52,16 @@ type ReferenceData = {
 let referenceDataCache: (ReferenceData & { expiresAt: number }) | null = null;
 let referenceDataPromise: Promise<ReferenceData> | null = null;
 
+/**
+ * Voice is always realtime -- the caller waits in silence. Text defaults to the
+ * cheaper OpenRouter path, but TEXT_LATENCY_MODE=realtime flips it to the fast
+ * provider without a deploy, for when responsiveness matters more than tokens.
+ */
+function latencyModeFor(source: "text" | "voice"): "standard" | "realtime" {
+  if (source === "voice") return "realtime";
+  return process.env.TEXT_LATENCY_MODE === "realtime" ? "realtime" : "standard";
+}
+
 function invalidId(value?: string) {
   return Boolean(value && !uuidPattern.test(value));
 }
@@ -460,7 +470,8 @@ export async function POST(request: Request) {
     locationsForUnderstanding,
     previousDraft,
     citizenContext,
-    preparedEvidence.map((item) => item.aiInput)
+    preparedEvidence.map((item) => item.aiInput),
+    latencyModeFor(source)
   );
   mark("gemini_or_fallback_complete");
   const onlinePlace = await onlinePlacePromise;
