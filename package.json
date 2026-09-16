@@ -21,7 +21,8 @@
     "test:gemini:bench": "jiti tests/gemini-bench.live.ts",
     "test": "npm run test:ai && npm run test:domain && npm run test:channels && npm run test:providers",
     "audit:queries": "node scripts/audit-queries.mjs",
-    "test:live-token": "jiti tests/live-token.live.ts"
+    "test:live-token": "jiti tests/live-token.live.ts",
+    "test:quality:live": "jiti tests/quality.live.ts"
   },
   "dependencies": {
     "@google/genai": "2.17.1",

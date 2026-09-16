@@ -29,16 +29,26 @@ export class GeminiUnavailableError extends Error {
 }
 
 /**
- * Ordered by measured performance on a real SAUTI1 turn, not by version number.
- * gemini-3.5-flash-lite: 1.6s average, all behavioural checks passing.
- * gemini-3.1-flash-lite: 5.6s, also correct -- a usable second choice.
- * The newer 3.7/3.8 flash models benchmarked as persistently overloaded, so
- * they sit at the back rather than the front.
+ * Ordered by measured behaviour on tests/quality.live.ts, not by version
+ * number or size. Against that suite:
+ *
+ *   gemini-3.5-flash-lite     2.2s   0 failures
+ *   gemini-flash-lite-latest  2.0s   0 failures
+ *   gemini-3.6-flash          6.9s   7 failures
+ *   gemini-3-flash-preview    4.9s   8 failures
+ *   gemini-3.5 / 2.5 / 3.7-flash     503, no capacity on this key
+ *
+ * The larger models are not merely slower here: they re-ask for facts the
+ * citizen has already given ("where is the electricity pole?" after the
+ * citizen said Kireka), which is the exact behaviour this product exists to
+ * avoid. Reach for a bigger model only with a suite run to back it up.
  */
 const DEFAULT_GEMINI_CHAIN = [
   "gemini-3.5-flash-lite",
+  // Alias, routed separately, so it often has capacity when the pinned
+  // version is shedding load. Also scores 0 failures.
+  "gemini-flash-lite-latest",
   "gemini-3.1-flash-lite",
-  "gemini-3.5-flash",
 ];
 
 export function geminiAvailable() {
