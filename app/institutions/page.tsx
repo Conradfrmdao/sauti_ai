@@ -1,6 +1,7 @@
 import { Building2, Clock3, ExternalLink, Mail, MapPin, Phone, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { EmptyState } from "@/components/case-ui";
 import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function InstitutionsPage() {
@@ -17,6 +18,12 @@ export default async function InstitutionsPage() {
     .eq("verified", true)
     .order("sector")
     .order("name");
+  if (error) throw new Error("The institution directory could not be loaded.");
+
+  function phoneHref(value: string) {
+    const candidate = value.match(/(?:\+\d[\d\s]{7,}|0\d[\d\s]{7,})/)?.[0];
+    return candidate ? `tel:${candidate.replace(/[^+\d]/g, "")}` : undefined;
+  }
 
   return (
     <AppShell>
@@ -26,8 +33,8 @@ export default async function InstitutionsPage() {
           Organizations Sauti1 can identify and route to from a natural conversation.
         </p>
 
-        {error ? (
-          <div className="preview-empty">Apply migration 004 to load the institution catalogue.</div>
+        {(institutions ?? []).length === 0 ? (
+          <EmptyState description="No verified active institution is currently published in the SAUTI1 catalogue." icon={<Building2 size={19} />} title="No institutions available" />
         ) : (
           <div className="institution-directory">
             {(institutions ?? []).map((institution) => (
@@ -55,8 +62,8 @@ export default async function InstitutionsPage() {
                     {institution.emergency_phone && <strong><ShieldAlert size={13} />Emergency / toll-free: {institution.emergency_phone}</strong>}
                   </div>
                   <div className="institution-contacts">
-                    {institution.contact_phone && <span><Phone size={12} />{institution.contact_phone}</span>}
-                    {institution.contact_email && <span><Mail size={12} />{institution.contact_email}</span>}
+                    {institution.contact_phone && (phoneHref(institution.contact_phone) ? <a href={phoneHref(institution.contact_phone)}><Phone size={12} />{institution.contact_phone}</a> : <span><Phone size={12} />{institution.contact_phone}</span>)}
+                    {institution.contact_email && <a href={`mailto:${institution.contact_email}`}><Mail size={12} />{institution.contact_email}</a>}
                     {institution.website_url && (
                       <a href={institution.website_url} target="_blank" rel="noreferrer">
                         <ExternalLink size={12} /> Official website

@@ -1,75 +1,23 @@
 import type { ReactNode } from "react";
 
-import { redirect } from "next/navigation";
+import { OperationsShell } from "@/components/operations-shell";
+import { requireAdminWorkspace } from "@/lib/auth/workspace-session";
 
-import { createClient } from "@/lib/supabase/server";
+export default async function AdminLayout({ children }: { children: ReactNode }) {
+  const { profile, user } = await requireAdminWorkspace();
+  const personName = profile?.full_name?.trim()
+    || (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "")
+    || user.email?.split("@")[0]
+    || "Platform administrator";
 
-type AdminLayoutProps = {
-  children: ReactNode;
-};
-
-export default async function AdminLayout({
-  children,
-}: AdminLayoutProps) {
-  const supabase =
-    await createClient();
-
-  /* =========================================================
-     1. VERIFY AUTHENTICATION
-  ========================================================= */
-
-  const {
-    data: claimsData,
-    error: claimsError,
-  } =
-    await supabase.auth.getClaims();
-
-  const userId =
-    claimsData?.claims?.sub;
-
-  if (
-    claimsError ||
-    !userId
-  ) {
-    redirect("/login");
-  }
-
-  /* =========================================================
-     2. CHECK PLATFORM ROLE
-  ========================================================= */
-
-  const {
-    data: profile,
-    error: profileError,
-  } =
-    await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", userId)
-      .maybeSingle();
-
-  if (
-    profileError ||
-    !profile
-  ) {
-    redirect("/");
-  }
-
-  /* =========================================================
-     3. ONLY SAUTI1 ADMINS MAY CONTINUE
-  ========================================================= */
-
-  if (
-    profile.role !== "admin"
-  ) {
-    redirect(
-      "/auth/route"
-    );
-  }
-
-  /* =========================================================
-     AUTHORIZED
-  ========================================================= */
-
-  return children;
+  return (
+    <OperationsShell
+      kind="admin"
+      personName={personName}
+      roleLabel="Platform administrator"
+      workspaceName="SAUTI1 Control Centre"
+    >
+      {children}
+    </OperationsShell>
+  );
 }

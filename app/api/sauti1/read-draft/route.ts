@@ -14,26 +14,32 @@ export async function POST(request: Request) {
   }
 
   let reportId = "";
+  let markAll = false;
   try {
-    const body = await request.json() as { reportId?: unknown };
+    const body = await request.json() as { reportId?: unknown; all?: unknown };
     reportId = typeof body.reportId === "string" ? body.reportId : "";
+    markAll = body.all === true;
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
-  if (!uuidPattern.test(reportId)) {
+  if (!markAll && !uuidPattern.test(reportId)) {
     return NextResponse.json({ error: "A valid draft report is required." }, { status: 400 });
   }
 
-  const { data: report, error } = await supabase
+  let update = supabase
     .from("reports")
     .update({ attention_read_at: new Date().toISOString() })
-    .eq("id", reportId)
     .eq("user_id", user.id)
     .eq("source", "text")
     .in("status", ["draft", "pending_confirmation"])
-    .select("id")
-    .maybeSingle();
+    .is("attention_read_at", null);
+
+  if (!markAll) update = update.eq("id", reportId);
+  const { data: reports, error } = await update.select("id");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ read: Boolean(report) }, { headers: { "Cache-Control": "no-store" } });
+  return NextResponse.json(
+    { read: (reports ?? []).length > 0, count: reports?.length ?? 0 },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }

@@ -215,24 +215,24 @@ function toSession(row: Record<string, unknown>, phoneE164: string): ChannelSess
 async function ensureExternalContact(supabase: SupabaseClient, phoneE164: string) {
   const { data: existing, error: lookupError } = await supabase
     .from("external_channel_contacts")
-    .select("id, linked_user_id")
+    .select("id, linked_user_id, link_verified_at")
     .eq("phone_e164", phoneE164)
     .maybeSingle();
   if (lookupError) throw new Error(`Could not load channel contact: ${lookupError.message}`);
   if (existing) {
     await supabase.from("external_channel_contacts")
       .update({ last_seen_at: new Date().toISOString() }).eq("id", existing.id);
-    return { id: existing.id as string, userId: existing.linked_user_id as string | null };
+    return {
+      id: existing.id as string,
+      userId: existing.link_verified_at ? existing.linked_user_id as string | null : null,
+    };
   }
-  const { data: profile } = await supabase.from("profiles")
-    .select("id").eq("phone", phoneE164).limit(2);
-  const linkedUserId = profile?.length === 1 ? profile[0].id : null;
   const { data, error } = await supabase.from("external_channel_contacts")
-    .insert({ phone_e164: phoneE164, linked_user_id: linkedUserId })
-    .select("id, linked_user_id").single();
+    .insert({ phone_e164: phoneE164, linked_user_id: null })
+    .select("id").single();
   if (error && isUniqueViolation(error)) return ensureExternalContact(supabase, phoneE164);
   if (error) throw new Error(`Could not save channel contact: ${error.message}`);
-  return { id: data.id as string, userId: data.linked_user_id as string | null };
+  return { id: data.id as string, userId: null };
 }
 
 export async function ensureChannelSession(input: {
@@ -427,7 +427,7 @@ export async function processChannelTurn(input: {
       loadReferenceData(supabase),
       supabase.from("messages").select("sender_type, body")
         .eq("conversation_id", session.conversationId)
-        .order("created_at", { ascending: true }).limit(30),
+        .order("created_at", { ascending: false }).limit(30),
       session.userId
         ? supabase.from("profiles").select("full_name, phone").eq("id", session.userId).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -458,7 +458,12 @@ export async function processChannelTurn(input: {
       return { duplicate: false, conversationId: session.conversationId,
         reportId: report.id, aiMessageId, assistantReply, ticket };
     }
-    const transcript = (transcriptResult.data ?? [])
+    const transcriptRows = [...(transcriptResult.data ?? [])].reverse();
+    const newestTranscriptRow = transcriptRows.at(-1);
+    if (newestTranscriptRow?.sender_type === "citizen" && newestTranscriptRow.body === message) {
+      transcriptRows.pop();
+    }
+    const transcript = transcriptRows
       .filter((row) => row.sender_type === "citizen" || row.sender_type === "ai")
       .map((row) => ({
         role: row.sender_type === "citizen" ? "user" as const : "assistant" as const,
@@ -584,13 +589,19 @@ export async function recordOutboundMessage(input: {
   provider: ChannelProvider;
   providerMessageId?: string | null;
   status: string;
+  transmittedText: string;
 }) {
-  const { error } = await createAdminClient().from("messages").update({
+  const { data, error } = await createAdminClient().from("messages").update({
+    body: input.transmittedText,
     provider: input.provider,
     provider_message_id: input.providerMessageId || null,
     delivery_status: input.status,
-  }).eq("id", input.localMessageId);
+  }).eq("id", input.localMessageId)
+    .eq("sender_type", "ai")
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(`Could not record outbound delivery: ${error.message}`);
+  if (!data) throw new Error("Could not record outbound delivery: reply message was not found.");
 }
 
 export async function updateOutboundDeliveryStatus(input: {
@@ -599,10 +610,15 @@ export async function updateOutboundDeliveryStatus(input: {
   status: string;
   delivered?: boolean;
 }) {
-  const { error } = await createAdminClient().from("messages").update({
+  const changes: Record<string, unknown> = {
     delivery_status: input.status,
-    delivered_at: input.delivered ? new Date().toISOString() : null,
-  }).eq("provider", input.provider)
-    .eq("provider_message_id", input.providerMessageId);
+  };
+  if (input.delivered) changes.delivered_at = new Date().toISOString();
+  const { data, error } = await createAdminClient().from("messages").update(changes)
+    .eq("provider", input.provider)
+    .eq("provider_message_id", input.providerMessageId)
+    .select("id")
+    .maybeSingle();
   if (error) throw new Error(`Could not update outbound delivery: ${error.message}`);
+  if (!data) throw new Error("Could not update outbound delivery: provider message was not found.");
 }

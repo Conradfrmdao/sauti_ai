@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isCitizenWorkspace } from "@/lib/auth/workspace";
+import { removeQueuedAttachmentObjects } from "@/lib/sauti1/storage-cleanup";
 import { createClient } from "@/lib/supabase/server";
 
 type CancelVoiceRequest = {
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
   }
 
   const reportIds = (reports ?? []).map((report) => report.id);
+  const attachmentPaths: string[] = [];
   if (reportIds.length) {
     const { data: attachments, error: attachmentsError } = await supabase
       .from("report_attachments")
@@ -58,11 +60,7 @@ export async function POST(request: Request) {
       .in("report_id", reportIds);
     if (attachmentsError) return NextResponse.json({ error: attachmentsError.message }, { status: 500 });
 
-    const paths = (attachments ?? []).map((attachment) => attachment.storage_path).filter(Boolean);
-    if (paths.length) {
-      const { error: storageError } = await supabase.storage.from("report-attachments").remove(paths);
-      if (storageError) return NextResponse.json({ error: storageError.message }, { status: 500 });
-    }
+    attachmentPaths.push(...(attachments ?? []).map((attachment) => attachment.storage_path).filter(Boolean));
   }
 
   const { data, error } = await supabase.rpc("cancel_voice_conversation", {
@@ -88,8 +86,15 @@ export async function POST(request: Request) {
   }
 
   const result = Array.isArray(data) ? data[0] : data;
+  const cleanup = attachmentPaths.length
+    ? await removeQueuedAttachmentObjects(attachmentPaths).catch((cleanupError) => {
+        console.warn("Cancelled voice draft; attachment cleanup remains queued.", cleanupError);
+        return { pending: true, objectCount: attachmentPaths.length };
+      })
+    : { pending: false, objectCount: 0 };
   return NextResponse.json({
     cancelled: Boolean(result?.cancelled),
     deletedReportCount: Number(result?.deleted_report_count ?? 0),
+    attachmentCleanupPending: cleanup.pending,
   });
 }

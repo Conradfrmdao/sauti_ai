@@ -29,11 +29,9 @@ begin
   limit 1;
 
 
-  if target_user_id is null then
-    raise exception
-      'Could not find auth user with email: %',
-      'your-second-email@example.com';
-  end if;
+  -- Account provisioning must never block a clean production migration.
+  -- If the optional local test user does not exist, only seed the catalogue
+  -- record below. Real memberships are provisioned explicitly after deploy.
 
 
   -- ==========================================================
@@ -88,38 +86,44 @@ begin
   -- 4. ASSIGN USER TO MTN UGANDA
   -- ==========================================================
 
-  insert into public.institution_members (
-    institution_id,
-    user_id,
-    role,
-    department,
-    active
-  )
-  values (
-    target_institution_id,
-    target_user_id,
-    'institution_admin',
-    'Customer Experience',
-    true
-  )
-  on conflict (
-    institution_id,
-    user_id
-  )
-  do update
-  set
-    role = 'institution_admin',
-    department = 'Customer Experience',
-    active = true;
+  if target_user_id is not null then
+    insert into public.institution_members (
+      institution_id,
+      user_id,
+      role,
+      department,
+      active
+    )
+    values (
+      target_institution_id,
+      target_user_id,
+      'institution_admin',
+      'Customer Experience',
+      true
+    )
+    on conflict (
+      institution_id,
+      user_id
+    )
+    do update
+    set
+      role = 'institution_admin',
+      department = 'Customer Experience',
+      active = true;
+  end if;
 
 
   -- ==========================================================
   -- 5. OUTPUT RESULT
   -- ==========================================================
 
-  raise notice
-    'SUCCESS: % assigned to MTN Uganda as institution_admin',
-    'your-second-email@example.com';
+  if target_user_id is null then
+    raise notice 'MTN Uganda seeded; optional local test user was not found and no membership was created.';
+  else
+    raise notice
+      'SUCCESS: % assigned to MTN Uganda as institution_admin',
+      'your-second-email@example.com';
+  end if;
 
 end $$;
 

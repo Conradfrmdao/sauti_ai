@@ -137,6 +137,14 @@ export type InfobipSmsSendResult =
       payload: InfobipSmsV3Request;
     };
 
+export function isInfobipDeliveredStatus(
+  status: Pick<InfobipStatus, "groupName" | "name">
+) {
+  const group = status.groupName?.trim().toUpperCase();
+  const name = status.name?.trim().toUpperCase();
+  return group === "DELIVERED" || name === "DELIVERED" || Boolean(name?.startsWith("DELIVERED_"));
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -533,7 +541,7 @@ export async function sendInfobipSms(
     }
     (options.logger ?? console).info(
       "[SMS] Development fallback: outgoing Infobip SMS was not sent.",
-      { to: normalizedTo, text: prepared.text, missing }
+      { missing, encoding: prepared.encoding, truncated: prepared.truncated }
     );
     return {
       mode: "development",

@@ -5,6 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { FormEvent, useEffect, useRef, useState } from "react";
 
+import { LowTechAccess } from "@/components/low-tech-access";
+import type { PublicChannelAccess } from "@/lib/channels/access";
+
 type GuestMessage = {
   role: "user" | "assistant";
   text: string;
@@ -45,12 +48,11 @@ const suggestions = [
   "My land title details appear incorrect",
 ];
 
-export function GuestLanding() {
+export function GuestLanding({ channelAccess }: { channelAccess: PublicChannelAccess }) {
   const [messages, setMessages] = useState<GuestMessage[]>([]);
   const [context, setContext] = useState<GuestContext>();
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
-  const [suggestionPage, setSuggestionPage] = useState(0);
   const [error, setError] = useState("");
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -58,17 +60,7 @@ export function GuestLanding() {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
-  useEffect(() => {
-    if (messages.length) return;
-    const interval = window.setInterval(() => {
-      setSuggestionPage((page) => (page + 1) % suggestions.length);
-    }, 5600);
-    return () => window.clearInterval(interval);
-  }, [messages.length]);
-
-  const visibleSuggestions = Array.from({ length: 3 }, (_, index) =>
-    suggestions[(suggestionPage * 3 + index) % suggestions.length]
-  );
+  const visibleSuggestions = suggestions.slice(0, 3);
 
   async function sendMessage(rawMessage: string) {
     const message = rawMessage.trim();
@@ -153,7 +145,7 @@ export function GuestLanding() {
         <div className="guest-input-region">
           {messages.some((message) => message.role === "assistant") && (
             <div className="guest-upgrade">
-              <span>Sign in to save this conversation, attach evidence, submit reports and track progress.</span>
+              <span>Sign in to start a secure report, attach evidence, submit it and track progress.</span>
               <div>
                 <Link href="/login">Sign in</Link>
                 <Link href="/login?mode=signup">Create account</Link>
@@ -181,8 +173,9 @@ export function GuestLanding() {
               <strong>Talk to our AI using your voice</strong>
             </div>
           </Link>
+          <LowTechAccess access={channelAccess} compact />
           {messages.length === 0 && (
-            <div aria-live="off" className="guest-suggestions" key={suggestionPage}>
+            <div aria-live="off" className="guest-suggestions">
               {visibleSuggestions.map((suggestion, index) => (
                 <button className={`tone-${index + 1}`} key={suggestion} onClick={() => void sendMessage(suggestion)} type="button">
                   {suggestion}

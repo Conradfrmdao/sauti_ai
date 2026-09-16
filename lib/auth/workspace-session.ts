@@ -21,9 +21,13 @@ export const getWorkspaceSession = cache(async () => {
       .maybeSingle(),
     supabase
       .from("institution_members")
-      .select("institution_id")
+      .select(`
+        institution_id, role, department,
+        institutions (id, name, short_name, slug, status, onboarding_state)
+      `)
       .eq("user_id", user.id)
       .eq("active", true)
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
   ]);
@@ -37,4 +41,23 @@ export async function requireCitizenWorkspace() {
   if (session.profile?.role === "admin") redirect("/admin");
   if (session.membership) redirect("/institution");
   return { ...session, user: session.user };
+}
+
+export async function requireAdminWorkspace() {
+  const session = await getWorkspaceSession();
+  if (!session.user) redirect("/login");
+  if (session.profile?.role !== "admin") redirect("/auth/route");
+  return { ...session, user: session.user };
+}
+
+export async function requireInstitutionWorkspace() {
+  const session = await getWorkspaceSession();
+  if (!session.user) redirect("/login");
+  if (session.profile?.role === "admin") redirect("/admin");
+  if (!session.membership) redirect("/auth/route");
+  const institution = Array.isArray(session.membership.institutions)
+    ? session.membership.institutions[0]
+    : session.membership.institutions;
+  if (!institution || institution.status !== "active") redirect("/workspace-unavailable");
+  return { ...session, user: session.user, membership: session.membership };
 }

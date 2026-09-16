@@ -1,127 +1,119 @@
-import Link from "next/link";
 import {
   ArrowRight,
+  FileText,
+  Mic2,
+  Send,
+  ShieldCheck,
 } from "lucide-react";
-import { TextIcon, VoiceIcon } from "./icons";
+import Link from "next/link";
+
+import { EmptyState, SourceBadge, StatusBadge, titleCase } from "@/components/case-ui";
+import { LowTechAccessServer } from "@/components/low-tech-access-server";
 
 export type RecentActivity = {
   id: string;
   status: string;
+  source: string;
   title: string;
+  institutionName: string;
   ticketCode: string | null;
   time: string;
 };
 
-function statusLabel(status: string) {
-  return status.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
-}
+export type CitizenSummary = {
+  total: number;
+  active: number;
+  resolved: number;
+};
+
+const prompts = [
+  "We have had no water since Monday",
+  "There is a dangerous pothole near my home",
+  "I sent money but it never arrived",
+];
 
 export function CitizenHome({
   recentActivity = [],
+  summary,
 }: {
   recentActivity?: RecentActivity[];
+  summary: CitizenSummary;
 }) {
   return (
-    <>
-      <section className="hero">
-        <h1>How can Sauti1 help you today?</h1>
+    <div className="citizen-home">
+      <header className="citizen-home-intro">
+        <p className="eyebrow">Signal → Trust → Action</p>
+        <h1>Tell us what happened.</h1>
+        <p>SAUTI1 builds a clear case, finds the responsible institution, and lets you review every detail before anything is sent.</p>
+      </header>
 
-        <p className="hero-sub">
-          Speak or type naturally. Sauti1 understands the issue, finds the
-          right institution, asks only what is needed, and confirms everything
-          with you before a report is submitted.
-        </p>
-
-        <div className="mode-grid">
-          <Link href="/voice" className="mode-card voice">
-            <div>
-              <div className="mode-icon">
-                <VoiceIcon />
-              </div>
-
-              <div className="mode-title">Talk with our AI</div>
-
-              <div className="mode-copy">
-                Speak naturally with Sauti1 in a live voice conversation.
-              </div>
-            </div>
-
-            <div className="card-arrow">
-              <ArrowRight size={18} />
-            </div>
-          </Link>
-
-          <Link href="/chat" className="mode-card text">
-            <div>
-              <div className="mode-icon">
-                <TextIcon />
-              </div>
-
-              <div className="mode-title">Text our AI</div>
-
-              <div className="mode-copy">
-                Describe what happened, attach evidence, and let Sauti1 guide
-                you.
-              </div>
-            </div>
-
-            <div className="card-arrow">
-              <ArrowRight size={18} />
-            </div>
-          </Link>
-        </div>
-
-        <div className="quick-section">
-          <div className="section-head">
-            <h2>Try asking</h2>
-          </div>
-
-          <div className="chips">
-            <Link className="chip" href={{ pathname: "/chat", query: { prompt: "I sent money but it never arrived" } }}>
-              I sent money but it never arrived
-            </Link>
-
-            <Link className="chip" href={{ pathname: "/chat", query: { prompt: "We have had no water since Monday" } }}>
-              We have had no water since Monday
-            </Link>
-
-            <Link className="chip" href={{ pathname: "/chat", query: { prompt: "Is this message from my bank legitimate?" } }}>
-              Is this message from my bank legitimate?
-            </Link>
-
-            <Link className="chip" href={{ pathname: "/chat", query: { prompt: "There is a dangerous pothole near me" } }}>
-              There is a dangerous pothole near me
-            </Link>
+      <section className="report-composer-panel" aria-labelledby="report-composer-title">
+        <div className="report-composer-heading">
+          <span className="report-composer-icon"><FileText aria-hidden="true" size={20} /></span>
+          <div>
+            <h2 id="report-composer-title">Start a civic report</h2>
+            <p>Use your own words. Dates, places and reference numbers help.</p>
           </div>
         </div>
-
-        <div className="quick-section activity-section">
-          <div className="section-head">
-            <h2>Recent activity</h2>
-
-            <Link href="/reports">View all</Link>
+        <form action="/chat" className="report-composer-form" method="get">
+          <textarea aria-label="Describe what happened" maxLength={4000} name="prompt" placeholder="For example: Our area has had no running water since Monday morning…" required rows={4} />
+          <div className="report-composer-actions">
+            <p><ShieldCheck aria-hidden="true" size={15} /> Nothing is submitted until you confirm.</p>
+            <div>
+              <Link className="secondary-action" href="/voice"><Mic2 aria-hidden="true" size={17} /> Use voice</Link>
+              <button type="submit">Build my case <Send aria-hidden="true" size={17} /></button>
+            </div>
           </div>
-
-          <div className="activity-grid">
-            {recentActivity.length === 0 ? (
-              <div className="activity-card">
-                <span className="activity-status">Ready</span>
-                <div className="activity-title">No reports yet</div>
-                <div className="activity-meta">Text Sauti1 to start a conversation</div>
-              </div>
-            ) : recentActivity.map((activity) => (
-              <Link className="activity-card" href={`/reports/${activity.id}`} key={activity.id}>
-                <span className="activity-status">{statusLabel(activity.status)}</span>
-                <div className="activity-title">{activity.title}</div>
-                <div className="activity-meta">
-                  {activity.ticketCode || "Draft"} - {activity.time}
-                </div>
-              </Link>
-            ))}
-          </div>
+        </form>
+        <div className="report-prompt-row" aria-label="Example issues">
+          {prompts.map((prompt) => (
+            <Link href={{ pathname: "/chat", query: { prompt } }} key={prompt} prefetch={false}>{prompt}</Link>
+          ))}
         </div>
       </section>
 
-    </>
+      <section className="citizen-summary" aria-label="Your report summary">
+        <div><strong>{summary.total}</strong><span>Total reports</span></div>
+        <div><strong>{summary.active}</strong><span>Being handled</span></div>
+        <div><strong>{summary.resolved}</strong><span>Citizen-confirmed</span></div>
+        <Link href="/reports">Open all reports <ArrowRight aria-hidden="true" size={16} /></Link>
+      </section>
+
+      <section className="recent-cases">
+        <div className="section-heading">
+          <div><p className="eyebrow">Accountability</p><h2>Recent cases</h2></div>
+          <Link href="/track">Track tickets <ArrowRight aria-hidden="true" size={16} /></Link>
+        </div>
+
+        {recentActivity.length === 0 ? (
+          <EmptyState
+            action={<Link className="text-action" href="/chat">Start your first report</Link>}
+            description="When you start a report, its draft, routing and institution response will appear here."
+            icon={<FileText size={19} />}
+            title="No reports yet"
+          />
+        ) : (
+          <div className="recent-case-list">
+            {recentActivity.map((activity) => (
+              <Link href={`/reports/${activity.id}`} key={activity.id} prefetch={false}>
+                <div className="recent-case-main">
+                  <span>{activity.ticketCode || "Draft report"}</span>
+                  <strong>{titleCase(activity.title, "Citizen service issue")}</strong>
+                  <small>{activity.institutionName}</small>
+                </div>
+                <div className="recent-case-meta">
+                  <SourceBadge source={activity.source} />
+                  <StatusBadge status={activity.status} />
+                  <time>{activity.time}</time>
+                </div>
+                <ArrowRight aria-hidden="true" size={18} />
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <LowTechAccessServer />
+    </div>
   );
 }

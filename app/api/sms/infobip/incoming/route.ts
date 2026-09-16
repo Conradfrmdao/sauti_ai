@@ -19,10 +19,6 @@ function authorize(request: Request) {
   const username = process.env.INFOBIP_WEBHOOK_USERNAME ?? "";
   const password = process.env.INFOBIP_WEBHOOK_PASSWORD ?? "";
   if (!username || !password) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[SMS] Infobip webhook auth is not configured; accepting development request.");
-      return true;
-    }
     return null;
   }
   return validateInfobipBasicAuth(request.headers.get("authorization"), username, password);
@@ -88,6 +84,7 @@ export async function POST(request: Request) {
       provider: "infobip",
       providerMessageId: sent.sent ? sent.messageId || result.aiMessageId : null,
       status,
+      transmittedText: sent.text,
     });
     processed += 1;
   }

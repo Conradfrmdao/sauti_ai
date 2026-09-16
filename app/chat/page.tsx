@@ -30,7 +30,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   let conversation: { id: string } | undefined;
 
   if (requestedReportId) {
-    const { data: resumableReport } = await supabase
+    const { data: resumableReport, error: reportError } = await supabase
       .from("reports")
       .select("conversation_id")
       .eq("id", requestedReportId)
@@ -38,36 +38,19 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
       .eq("source", "text")
       .in("status", ["draft", "pending_confirmation"])
       .maybeSingle();
+    if (reportError) throw new Error("We could not open this draft. Please try again.");
 
     if (resumableReport?.conversation_id) {
-      const [{ data: resumedConversation }] = await Promise.all([
-        supabase
-          .from("conversations")
-          .update({ status: "active", ended_at: null })
-          .eq("id", resumableReport.conversation_id)
-          .eq("user_id", user.id)
-          .eq("channel", "text")
-          .select("id")
-          .maybeSingle(),
-        supabase
-          .from("reports")
-          .update({ attention_read_at: new Date().toISOString() })
-          .eq("id", requestedReportId)
-          .eq("user_id", user.id)
-          .eq("source", "text")
-          .in("status", ["draft", "pending_confirmation"]),
-      ]);
+      const { data: resumedConversation, error: conversationError } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("id", resumableReport.conversation_id)
+        .eq("user_id", user.id)
+        .eq("channel", "text")
+        .maybeSingle();
+      if (conversationError) throw new Error("We could not open this conversation. Please try again.");
       conversation = resumedConversation ?? undefined;
     }
-  }
-
-  if (!conversation) {
-    await supabase
-      .from("conversations")
-      .update({ status: "closed", ended_at: new Date().toISOString() })
-      .eq("user_id", user.id)
-      .eq("channel", "text")
-      .eq("status", "active");
   }
 
   let initialMessages: ChatMessage[] | undefined;

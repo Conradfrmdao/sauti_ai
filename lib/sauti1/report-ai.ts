@@ -1485,7 +1485,6 @@ function normalizeDraft(
   const requestedInstitution = requestedSlug
     ? catalog.find((institution) => institution.slug === requestedSlug)
     : undefined;
-  const tiedInstitutions = tiedRoutingInstitutions(serviceContext, catalog, previous);
   const modelSelectedService = requestedInstitution
     ? (requestedInstitution.institution_services ?? []).find(
         (service) => service.category_key === requestedCategory

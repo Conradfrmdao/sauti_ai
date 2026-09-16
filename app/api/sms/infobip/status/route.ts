@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  isInfobipDeliveredStatus,
   parseInfobipStatusPayload,
   validateInfobipBasicAuth,
 } from "@/lib/channels/infobip";
@@ -17,10 +18,6 @@ function authorize(request: Request) {
   const username = process.env.INFOBIP_WEBHOOK_USERNAME ?? "";
   const password = process.env.INFOBIP_WEBHOOK_PASSWORD ?? "";
   if (!username || !password) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("[SMS] Infobip status auth is not configured; accepting development request.");
-      return true;
-    }
     return null;
   }
   return validateInfobipBasicAuth(request.headers.get("authorization"), username, password);
@@ -51,7 +48,7 @@ export async function POST(request: Request) {
       continue;
     }
     try {
-      const delivered = /delivered/i.test(`${report.status.groupName || ""} ${status}`);
+      const delivered = isInfobipDeliveredStatus(report.status);
       await updateOutboundDeliveryStatus({
         provider: "infobip",
         providerMessageId: report.messageId,

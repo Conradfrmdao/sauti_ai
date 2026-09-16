@@ -2,19 +2,15 @@ import { Bell, CheckCircle2, FileClock } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
+import { MarkDraftsRead } from "@/components/visit-effects";
 import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
 export default async function NotificationsPage() {
   const { supabase, user } = await requireCitizenWorkspace();
-  await supabase
-    .from("reports")
-    .update({ attention_read_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .eq("source", "text")
-    .in("status", ["draft", "pending_confirmation"])
-    .is("attention_read_at", null);
-
-  const [{ data: ownedTickets }, { data: drafts }] = await Promise.all([
+  const [
+    { data: ownedTickets, error: ticketsError },
+    { data: drafts, error: draftsError },
+  ] = await Promise.all([
     supabase
       .from("tickets")
       .select("id, reports!inner(user_id)")
@@ -28,8 +24,11 @@ export default async function NotificationsPage() {
       .order("updated_at", { ascending: false })
       .limit(20),
   ]);
+  if (ticketsError || draftsError) {
+    throw new Error("We could not load your notifications. Please try again.");
+  }
   const ownedTicketIds = (ownedTickets ?? []).map((ticket) => ticket.id);
-  const { data: events } = await supabase
+  const { data: events, error: eventsError } = await supabase
     .from("ticket_events")
     .select(`
       id, event_type, note, created_at,
@@ -38,9 +37,15 @@ export default async function NotificationsPage() {
     .in("ticket_id", ownedTicketIds.length ? ownedTicketIds : ["00000000-0000-0000-0000-000000000000"])
     .order("created_at", { ascending: false })
     .limit(30);
+  if (eventsError) throw new Error("We could not load institution updates. Please try again.");
+  const dateTime = (value: string) => new Intl.DateTimeFormat("en-UG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 
   return (
     <AppShell>
+      <MarkDraftsRead />
       <div className="simple-page">
         <h1 className="page-title">Notifications</h1>
         <p className="page-subtitle">Drafts needing attention and updates from institutions handling your reports.</p>
@@ -51,7 +56,7 @@ export default async function NotificationsPage() {
               <div>
                 <strong>Draft report needs your attention</strong>
                 <p>{draft.ai_summary || draft.description || draft.detected_category || "Continue your report with Sauti1."}</p>
-                <span>Continue draft</span>
+                <span>Continue draft · {dateTime(draft.updated_at)}</span>
               </div>
             </Link>
           ))}
@@ -66,7 +71,7 @@ export default async function NotificationsPage() {
                 <div className="notification-icon">
                   {event.event_type === "acknowledged" ? <CheckCircle2 size={16} /> : <Bell size={16} />}
                 </div>
-                <div><strong>{ticket?.ticket_code} - {institution?.short_name || institution?.name}</strong><p>{event.note}</p></div>
+                <div><strong>{ticket?.ticket_code} - {institution?.short_name || institution?.name}</strong><p>{event.note}</p><time>{dateTime(event.created_at)}</time></div>
               </Link>
             );
           })}

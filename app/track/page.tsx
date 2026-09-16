@@ -1,65 +1,77 @@
-import { ArrowRight, CheckCircle2, Circle, Clock3 } from "lucide-react";
+import { ArrowRight, Clock3, SearchCheck } from "lucide-react";
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
+import { AutoRefresh } from "@/components/auto-refresh";
+import { EmptyState, SourceBadge, StatusBadge, titleCase } from "@/components/case-ui";
+import { TicketLifecycle } from "@/components/ticket-lifecycle";
 import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 
-const stages = ["routed", "acknowledged", "in_progress", "resolved"];
-
-function label(value: string) {
-  return value.replaceAll("_", " ").replace(/^\w/, (letter) => letter.toUpperCase());
+function timeLabel(value: string) {
+  return new Intl.DateTimeFormat("en-UG", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
 export default async function TrackPage() {
   const { supabase, user } = await requireCitizenWorkspace();
-  const { data: tickets } = await supabase
+  const { data: tickets, error } = await supabase
     .from("tickets")
     .select(`
       id, ticket_code, status, created_at,
       institutions (name, short_name),
-      reports!inner (user_id, ai_summary, description),
+      reports!inner (user_id, ai_summary, description, source, detected_category),
       ticket_events (id, event_type, note, created_at)
     `)
     .eq("reports.user_id", user.id)
     .order("created_at", { ascending: false })
     .order("created_at", { referencedTable: "ticket_events", ascending: true })
     .limit(50);
+  if (error) throw new Error("We could not load ticket tracking. Please try again.");
 
   return (
     <AppShell>
-      <div className="simple-page">
-        <h1 className="page-title">Track a ticket</h1>
-        <p className="page-subtitle">Open a ticket to see its complete report and institution timeline.</p>
+      <div className="simple-page case-index-page">
+        <header className="case-index-header">
+          <div><p className="eyebrow">Accountability</p><h1 className="page-title">Track tickets</h1><p className="page-subtitle">Follow receipt, institution work and resolution without losing the original record.</p></div>
+          <AutoRefresh intervalSeconds={20} />
+        </header>
 
-        <div className="tracking-list">
-          {(tickets ?? []).length === 0 ? (
-            <div className="preview-empty">You do not have a submitted ticket yet.</div>
-          ) : (tickets ?? []).map((ticket) => {
-            const institution = Array.isArray(ticket.institutions) ? ticket.institutions[0] : ticket.institutions;
-            const report = Array.isArray(ticket.reports) ? ticket.reports[0] : ticket.reports;
-            const currentIndex = stages.indexOf(ticket.status);
-            return (
-              <Link className="tracking-ticket" href={`/track/${ticket.id}`} key={ticket.id}>
-                <div className="tracking-ticket-head">
-                  <div><strong>{ticket.ticket_code}</strong><span>{institution?.short_name || institution?.name}</span></div>
-                  <div className="tracking-ticket-action"><span className="activity-status">{label(ticket.status)}</span><ArrowRight size={17} /></div>
-                </div>
-                <p>{report?.ai_summary || report?.description}</p>
-                <div className="tracking-stages">
-                  {stages.map((stage, index) => {
-                    const complete = currentIndex >= index || ticket.status === "closed";
-                    return <div className={complete ? "complete" : ""} key={stage}>{complete ? <CheckCircle2 size={16} /> : <Circle size={16} />}<span>{label(stage)}</span></div>;
-                  })}
-                </div>
-                <div className="tracking-events">
-                  {(ticket.ticket_events ?? []).slice(-2).map((event) => (
-                    <div key={event.id}><Clock3 size={12} /><span>{event.note || label(event.event_type)}</span></div>
-                  ))}
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+        {(tickets ?? []).length === 0 ? (
+          <EmptyState
+            action={<Link className="primary-page-action" href="/chat">Start a report</Link>}
+            description="A tracking number appears after you review and submit a report."
+            icon={<SearchCheck size={20} />}
+            title="No submitted tickets"
+          />
+        ) : (
+          <div className="tracking-list">
+            {(tickets ?? []).map((ticket) => {
+              const institution = Array.isArray(ticket.institutions) ? ticket.institutions[0] : ticket.institutions;
+              const report = Array.isArray(ticket.reports) ? ticket.reports[0] : ticket.reports;
+              const latestEvent = ticket.ticket_events?.at(-1);
+              return (
+                <Link className="tracking-ticket" href={`/track/${ticket.id}`} key={ticket.id} prefetch={false}>
+                  <div className="tracking-ticket-head">
+                    <div>
+                      <span>{ticket.ticket_code}</span>
+                      <strong>{titleCase(report?.detected_category, "Citizen service issue")}</strong>
+                      <small>{institution?.short_name || institution?.name || "Institution not available"}</small>
+                    </div>
+                    <div className="tracking-ticket-action"><SourceBadge source={report?.source} /><StatusBadge status={ticket.status} /><ArrowRight size={17} /></div>
+                  </div>
+                  <p>{report?.ai_summary || report?.description}</p>
+                  <TicketLifecycle compact status={ticket.status} />
+                  {latestEvent && (
+                    <div className="tracking-latest-event">
+                      <Clock3 aria-hidden="true" size={13} />
+                      <span>{latestEvent.note || titleCase(latestEvent.event_type)}</span>
+                      <time>{timeLabel(latestEvent.created_at)}</time>
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
     </AppShell>
   );

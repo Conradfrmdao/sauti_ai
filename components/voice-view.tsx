@@ -138,6 +138,13 @@ function safelyCloseAudioContext(context?: AudioContext) {
   });
 }
 
+function audioSignalLevel(samples: Float32Array) {
+  if (!samples.length) return 0;
+  let sum = 0;
+  for (let index = 0; index < samples.length; index += 1) sum += samples[index] * samples[index];
+  return Math.min(1, Math.sqrt(sum / samples.length) * 5);
+}
+
 export function VoiceView({
   initialMessages,
   initialConversationId,
@@ -185,6 +192,11 @@ export function VoiceView({
   const conversationGenerationRef = useRef(0);
   const guestHistoryRef = useRef<ChatMessage[]>([]);
   const guestContextRef = useRef<GuestContext | undefined>(undefined);
+  const signalRef = useRef<HTMLDivElement | null>(null);
+
+  const showSignalLevel = useCallback((level: number) => {
+    signalRef.current?.style.setProperty("--signal-level", level.toFixed(3));
+  }, []);
 
   useEffect(() => { conversationIdRef.current = conversationId; }, [conversationId]);
   useEffect(() => { reportIdRef.current = reportId; }, [reportId]);
@@ -196,7 +208,8 @@ export function VoiceView({
     }
     outputSourcesRef.current.clear();
     nextPlayTimeRef.current = outputContextRef.current?.currentTime ?? 0;
-  }, []);
+    showSignalLevel(0);
+  }, [showSignalLevel]);
 
   const releaseMicrophone = useCallback((signalEnd = true) => {
     if (signalEnd && sessionRef.current) {
@@ -267,6 +280,7 @@ export function VoiceView({
     const buffer = context.createBuffer(1, length, audioRate(mimeType));
     const channel = buffer.getChannelData(0);
     for (let index = 0; index < length; index += 1) channel[index] = view.getInt16(index * 2, true) / 32768;
+    showSignalLevel(audioSignalLevel(channel));
 
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -276,6 +290,7 @@ export function VoiceView({
     outputSourcesRef.current.add(source);
     source.onended = () => {
       outputSourcesRef.current.delete(source);
+      if (outputSourcesRef.current.size === 0) showSignalLevel(0);
       if (closeAfterReplyRef.current) {
         finishSpokenSubmission();
       } else if (
@@ -290,7 +305,7 @@ export function VoiceView({
     };
     source.start(startAt);
     if (mountedRef.current && !closeAfterReplyRef.current) setState("speaking");
-  }, [finishSpokenSubmission]);
+  }, [finishSpokenSubmission, showSignalLevel]);
 
   const submitCurrentReport = useCallback(async (call?: VoiceFunctionCall) => {
     const activeReportId = reportIdRef.current;
@@ -554,8 +569,13 @@ export function VoiceView({
     const silentGain = context.createGain();
     silentGain.gain.value = 0;
     processor.onaudioprocess = (event) => {
-      if (!sessionRef.current || mutedRef.current) return;
-      const pcm = pcm16FromFloat32(event.inputBuffer.getChannelData(0), context.sampleRate);
+      const samples = event.inputBuffer.getChannelData(0);
+      if (!sessionRef.current || mutedRef.current) {
+        showSignalLevel(0);
+        return;
+      }
+      showSignalLevel(audioSignalLevel(samples));
+      const pcm = pcm16FromFloat32(samples, context.sampleRate);
       sessionRef.current.sendRealtimeInput({ audio: { data: encodeBase64(pcm), mimeType: "audio/pcm;rate=16000" } });
     };
     source.connect(processor);
@@ -564,7 +584,7 @@ export function VoiceView({
     inputSourceRef.current = source;
     processorRef.current = processor;
     silentGainRef.current = silentGain;
-  }, []);
+  }, [showSignalLevel]);
 
   async function startSession() {
     if (state === "connecting" || sessionRef.current) return;
@@ -610,11 +630,15 @@ export function VoiceView({
       await attachMicrophone(stream);
       setState("listening");
     } catch (startError) {
-      releaseMicrophone(false);
-      safelyCloseAudioContext(inputContextRef.current);
-      safelyCloseAudioContext(outputContextRef.current);
-      inputContextRef.current = undefined;
-      outputContextRef.current = undefined;
+      if (sessionRef.current) {
+        endSession("error");
+      } else {
+        releaseMicrophone(false);
+        safelyCloseAudioContext(inputContextRef.current);
+        safelyCloseAudioContext(outputContextRef.current);
+        inputContextRef.current = undefined;
+        outputContextRef.current = undefined;
+      }
       setError(startError instanceof Error ? startError.message : "Could not start Voice Sauti1.");
       setState("error");
     }
@@ -635,7 +659,7 @@ export function VoiceView({
       setState("listening");
     } catch {
       setError("Microphone access was not restored.");
-      setState("error");
+      endSession("error");
     }
   }
 
@@ -683,10 +707,11 @@ export function VoiceView({
     turnAbortRef.current?.abort();
     turnAbortRef.current = undefined;
     endSession("ended");
-    clearConversationData();
 
-    if (guestMode) return;
-    if (!activeConversationId) return;
+    if (guestMode || !activeConversationId) {
+      clearConversationData();
+      return;
+    }
 
     try {
       const response = await fetch("/api/sauti1/cancel-voice", {
@@ -696,15 +721,17 @@ export function VoiceView({
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The voice conversation could not be cleared.");
+      clearConversationData();
     } catch (cancelError) {
       if (cancellationGeneration === conversationGenerationRef.current) {
         setError(cancelError instanceof Error ? cancelError.message : "The voice conversation could not be cleared.");
+        setState("error");
       }
     }
   }
 
   useEffect(() => {
-    if (!ticket?.ticket_id || ["resolved", "closed", "rejected"].includes(ticket.ticket_status || "")) return;
+    if (!ticket?.ticket_id || ["closed", "cancelled"].includes(ticket.ticket_status || "")) return;
     const ticketId = ticket.ticket_id;
     const conversationGeneration = conversationGenerationRef.current;
     const controller = new AbortController();
@@ -773,16 +800,20 @@ export function VoiceView({
   return (
     <div className={`voice-page ${guestMode ? "guest-live-voice" : ""}`}>
       <div className={`grid h-full w-full min-h-0 gap-4 ${guestMode ? "max-w-[820px]" : "max-w-[1120px] lg:grid-cols-[minmax(0,1fr)_310px]"}`}>
-        <section className="flex min-h-0 flex-col items-center overflow-hidden rounded-[8px] border border-[#e3e7ef] bg-white px-4 py-4 sm:px-6">
+        <section className="voice-stage flex min-h-0 flex-col items-center overflow-hidden rounded-[8px] border border-[#e3e7ef] bg-white px-4 py-4 sm:px-6">
+          <h1 className="voice-title">{guestMode ? "Guest SAUTI Signal" : "SAUTI Signal"}</h1>
           <div className="voice-status shrink-0"><span className={`online-dot ${state === "error" ? "!bg-[#d94b45]" : ""}`} />{statusText}</div>
           <p className="voice-hint shrink-0 text-center">{guestMode
-            ? "Speak naturally. Sign in when you are ready to save, submit and track a report."
+            ? "Speak naturally to explore the issue. Sign in to start a separate secure report you can submit and track."
             : "Speak naturally. Sauti1 will finish each reply before listening for the next detail."}</p>
 
           <div className="min-h-0 w-full flex-1 overflow-y-auto px-1">
-            <div className={`sauti-core-wrap mx-auto !w-[min(300px,58vw)] ${["listening", "speaking", "processing"].includes(state) ? "is-active" : ""}`} aria-label={statusText}>
-              <div className="sauti-core-ring2" /><div className="sauti-core-ring" />
-              <div className="sauti-core"><div className="core-dots" /><div className="core-wave" /></div>
+            <div aria-label={statusText} className="sauti-signal" data-state={state} ref={signalRef} role="img">
+              <div className="sauti-signal-identity">S1</div>
+              <div aria-hidden="true" className="sauti-signal-wave">
+                {Array.from({ length: 13 }, (_, index) => <i key={index} style={{ "--bar-index": index } as React.CSSProperties} />)}
+              </div>
+              <small>{state === "listening" ? "Microphone signal" : state === "speaking" ? "Response signal" : "Secure voice channel"}</small>
             </div>
 
             <div className="mx-auto -mt-3 max-w-[650px] space-y-2 text-center" aria-live="polite">
@@ -803,14 +834,14 @@ export function VoiceView({
               <>
                 <button aria-label={muted ? "Unmute microphone" : "Mute microphone"} className="grid h-11 w-11 place-items-center rounded-full border border-[#dbe2ec] bg-white text-[#24334f]" onClick={toggleMute} title={muted ? "Unmute microphone" : "Mute microphone"} type="button">{muted ? <MicOff size={19} /> : <Mic2 size={19} />}</button>
                 <button aria-label="End voice conversation" className="grid h-12 w-12 place-items-center rounded-full bg-[#d94b45] text-white" onClick={() => void cancelConversation()} title="End voice conversation" type="button"><PhoneOff size={20} /></button>
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-[#edf3ff] text-[#1d5eff]" title="Full duplex audio">{state === "connecting" || state === "processing" ? <Loader2 className="animate-spin" size={19} /> : <Volume2 size={19} />}</span>
+                <span className="voice-audio-indicator" title="Full duplex audio">{state === "connecting" || state === "processing" ? <Loader2 className="is-spinning" size={19} /> : <Volume2 size={19} />}<span className="sr-only">Full duplex audio active</span></span>
               </>
             )}
           </div>
         </section>
 
         {!guestMode && <aside className="min-h-0 overflow-y-auto rounded-[8px] border border-[#e3e7ef] bg-white p-4">
-          <h2 className="text-[14px] font-bold">Voice report</h2>
+          <h2 className="text-[14px] font-bold">Live Case</h2>
           {ticket ? (
             <div className="mt-4 space-y-3">
               <div className="rounded-[8px] bg-[#edf8f3] p-3"><CheckCircle2 className="text-[#087a50]" size={20} /><p className="mt-2 text-[12px] font-bold">{ticket.ticket_code}</p><p className="mt-1 text-[10px] leading-4 text-[#567063]">Sent to {ticket.institution_name}. Status: {(ticket.ticket_status || "routed").replaceAll("_", " ")}.</p></div>

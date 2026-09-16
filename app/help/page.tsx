@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Building2, FileText, MessageSquareText } from "lucide-react";
 
 import { AppShell } from "@/components/app-shell";
+import { LowTechAccessServer } from "@/components/low-tech-access-server";
 
 export default function HelpPage() {
   return (
@@ -14,6 +15,7 @@ export default function HelpPage() {
           <Link href="/track"><FileText size={18} /><h2>Track a report</h2><p>See routing, acknowledgement and resolution progress.</p></Link>
           <Link href="/institutions"><Building2 size={18} /><h2>Find an institution</h2><p>View official contact details and services in the Sauti1 catalogue.</p></Link>
         </div>
+        <LowTechAccessServer />
       </div>
     </AppShell>
   );

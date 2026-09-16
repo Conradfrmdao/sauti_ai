@@ -1,8 +1,12 @@
-import { ArrowLeft, CheckCircle2, FileText, Image, MessageSquareText } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Image as EvidenceIcon, MessageSquareText } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { AutoRefresh } from "@/components/auto-refresh";
+import { PriorityMarker, SourceBadge, StatusBadge } from "@/components/case-ui";
+import { CitizenResolutionConfirmation } from "@/components/citizen-resolution-confirmation";
+import { MarkDraftsRead } from "@/components/visit-effects";
 import { requireCitizenWorkspace } from "@/lib/auth/workspace-session";
 import { intakeFieldLabel } from "@/lib/sauti1/intake-fields";
 import { visibleIntakeData } from "@/lib/sauti1/report-ai";
@@ -19,7 +23,7 @@ function dateTime(value: string | null | undefined) {
 export default async function ReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { supabase, user } = await requireCitizenWorkspace();
-  const { data: report } = await supabase
+  const { data: report, error: reportError } = await supabase
     .from("reports")
     .select(`
       id, conversation_id, description, ai_summary, detected_category, priority,
@@ -27,7 +31,8 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
       institutions (name, short_name, sector, contact_phone, contact_email, website_url),
       report_attachments (id, storage_path, original_name, mime_type, size_bytes, created_at),
       tickets (
-        id, ticket_code, status, priority, acknowledged_at, resolved_at, created_at, updated_at,
+        id, ticket_code, status, priority, acknowledged_at, resolved_at,
+        resolution_note, resolution_proposed_at, created_at, updated_at,
         ticket_events (id, event_type, from_status, to_status, note, created_at)
       )
     `)
@@ -35,16 +40,8 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
     .eq("user_id", user.id)
     .maybeSingle();
 
+  if (reportError) throw new Error("We could not load this report. Please try again.");
   if (!report) notFound();
-
-  if (report.source === "text" && ["draft", "pending_confirmation"].includes(report.status)) {
-    await supabase
-      .from("reports")
-      .update({ attention_read_at: new Date().toISOString() })
-      .eq("id", report.id)
-      .eq("user_id", user.id)
-      .is("attention_read_at", null);
-  }
 
   const institution = Array.isArray(report.institutions) ? report.institutions[0] : report.institutions;
   const ticket = Array.isArray(report.tickets) ? report.tickets[0] : report.tickets;
@@ -63,20 +60,31 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
 
   return (
     <AppShell>
+      {report.source === "text" && ["draft", "pending_confirmation"].includes(report.status) && (
+        <MarkDraftsRead reportId={report.id} />
+      )}
       <div className="simple-page detail-page">
         <Link className="back-link" href="/reports"><ArrowLeft size={16} /> My reports</Link>
         <header className="detail-header">
           <div><span className="detail-eyebrow">Report</span><h1>{label(report.detected_category || "Citizen service issue")}</h1><p>{report.ai_summary || report.description}</p></div>
-          <span className="activity-status">{label(ticket?.status || report.status)}</span>
+          <div className="detail-header-status"><SourceBadge source={report.source} /><StatusBadge status={ticket?.status || report.status} />{ticket && <AutoRefresh intervalSeconds={20} />}</div>
         </header>
 
         <div className="detail-grid">
           <div className="detail-main">
+            {ticket?.status === "resolution_proposed" && (
+              <CitizenResolutionConfirmation
+                institutionName={institution?.short_name || institution?.name || "The institution"}
+                reportId={report.id}
+                resolutionNote={ticket.resolution_note}
+                ticketId={ticket.id}
+              />
+            )}
             <section className="detail-section"><h2>Report information</h2><p className="detail-description">{report.description}</p><div className="detail-kv-grid">
               <div><span>Institution</span><strong>{institution?.short_name || institution?.name || "Not yet identified"}</strong></div>
               <div><span>Category</span><strong>{label(report.detected_category)}</strong></div>
-              <div><span>Priority</span><strong>{label(report.priority)}</strong></div>
-              <div><span>Source</span><strong>{label(report.source)}</strong></div>
+              <div><span>Priority</span><strong><PriorityMarker priority={report.priority} /></strong></div>
+              <div><span>Source</span><strong><SourceBadge source={report.source} /></strong></div>
               <div><span>Location</span><strong>{report.location_text || "Not provided"}</strong></div>
               <div><span>AI confidence</span><strong>{report.ai_confidence === null ? "Not available" : `${Math.round(Number(report.ai_confidence) * 100)}%`}</strong></div>
             </div></section>
@@ -90,7 +98,7 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
                   {attachments.map((attachment) => (
                     attachment.url ? (
                       <a href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank">
-                        {attachment.mime_type?.startsWith("image/") ? <Image size={17} /> : <FileText size={17} />}
+                        {attachment.mime_type?.startsWith("image/") ? <EvidenceIcon size={17} /> : <FileText size={17} />}
                         <span>{attachment.original_name || "Report evidence"}</span>
                         <small>{attachment.size_bytes ? `${Math.max(1, Math.round(Number(attachment.size_bytes) / 1024))} KB` : "Open"}</small>
                       </a>
@@ -110,7 +118,7 @@ export default async function ReportDetailPage({ params }: { params: Promise<{ i
           <aside className="detail-side">
             <section className="detail-section"><h2>Ticket</h2>{ticket ? <>
               <strong className="ticket-code">{ticket.ticket_code}</strong>
-              <div className="detail-kv-list"><div><span>Status</span><strong>{label(ticket.status)}</strong></div><div><span>Created</span><strong>{dateTime(ticket.created_at)}</strong></div><div><span>Acknowledged</span><strong>{dateTime(ticket.acknowledged_at)}</strong></div><div><span>Resolved</span><strong>{dateTime(ticket.resolved_at)}</strong></div></div>
+              <div className="detail-kv-list"><div><span>Status</span><strong>{label(ticket.status)}</strong></div><div><span>Created</span><strong>{dateTime(ticket.created_at)}</strong></div><div><span>Acknowledged</span><strong>{dateTime(ticket.acknowledged_at)}</strong></div><div><span>Resolution proposed</span><strong>{dateTime(ticket.resolution_proposed_at)}</strong></div><div><span>Citizen confirmed</span><strong>{dateTime(ticket.resolved_at)}</strong></div></div>
               <Link className="detail-action" href={`/track/${ticket.id}`}>Open tracking timeline</Link>
             </> : <>
               <p>This report has not been submitted yet.</p>

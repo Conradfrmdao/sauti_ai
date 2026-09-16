@@ -7,6 +7,7 @@ import {
   parseInfobipInboundPayload,
   parseInfobipStatusPayload,
   prepareSingleSms,
+  isInfobipDeliveredStatus,
   sendInfobipSms,
   validateInfobipBasicAuth,
 } from "../lib/channels/infobip";
@@ -208,6 +209,10 @@ async function run() {
   assert.equal(sendResult.mode, "live");
   assert.equal(sendResult.sent, true);
   assert.equal(sendResult.messageId, "provider-message-123");
+
+  assert.equal(isInfobipDeliveredStatus({ groupName: "DELIVERED", name: "DELIVERED_TO_HANDSET" }), true);
+  assert.equal(isInfobipDeliveredStatus({ groupName: "PENDING", name: "PENDING_ENROUTE" }), false);
+  assert.equal(isInfobipDeliveredStatus({ groupName: "NOT_DELIVERED", name: "NOT_DELIVERED" }), false);
 
   let fallbackLogged = false;
   const fallback = await sendInfobipSms({

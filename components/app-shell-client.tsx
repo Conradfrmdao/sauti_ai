@@ -7,7 +7,7 @@ import {
   FileText,
   Home,
   Landmark,
-  MessageSquareText,
+  Menu,
   SearchCheck,
   UserRound,
   X,
@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/account-menu";
+import { Brand } from "@/components/brand";
 
 type Identity = {
   name: string;
@@ -41,9 +42,7 @@ const discoverNav = [
 const mobileTabs = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/reports", label: "Reports", icon: FileText },
-  { href: "/chat", label: "Ask", icon: MessageSquareText, primary: true },
   { href: "/track", label: "Track", icon: SearchCheck },
-  { href: "/explore", label: "Explore", icon: Compass },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -65,7 +64,7 @@ function NavigationLinks({ pathname, attentionCount }: { pathname: string; atten
     <>
       <div className="nav-section">Citizen</div>
       {citizenNav.map(({ href, label, icon: Icon }) => (
-        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
+        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch={false}>
           <Icon size={18} strokeWidth={1.85} />
           <span>{label}</span>
           {href === "/reports" && <AttentionBadge count={attentionCount} />}
@@ -75,7 +74,7 @@ function NavigationLinks({ pathname, attentionCount }: { pathname: string; atten
 
       <div className="nav-section">Discover</div>
       {discoverNav.map(({ href, label, icon: Icon }) => (
-        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
+        <Link className={`nav-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch={false}>
           <Icon size={18} strokeWidth={1.85} />
           <span>{label}</span>
           {href === "/notifications" && <AttentionBadge count={attentionCount} />}
@@ -98,25 +97,43 @@ export function AppShellClient({ children, identity, attentionCount: initialAtte
   useEffect(() => setAttentionCount(initialAttentionCount), [initialAttentionCount]);
   useEffect(() => {
     const updateAttention = (event: Event) => {
-      const delta = Number((event as CustomEvent<{ delta?: number }>).detail?.delta ?? 0);
+      const detail = (event as CustomEvent<{ delta?: number; reset?: boolean }>).detail;
+      if (detail?.reset) {
+        setAttentionCount(0);
+        return;
+      }
+      const delta = Number(detail?.delta ?? 0);
       setAttentionCount((count) => Math.max(0, count + delta));
     };
     window.addEventListener("sauti1:attention-change", updateAttention);
     return () => window.removeEventListener("sauti1:attention-change", updateAttention);
   }, []);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMoreOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [moreOpen]);
 
   return (
     <div className="shell">
       <div className="app-grid">
         <aside className="sidebar">
-          <Link href="/dashboard" className="brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
+          <Brand compact href="/dashboard" />
           <NavigationLinks attentionCount={attentionCount} pathname={pathname} />
           <AccountMenu name={identity.name} role={identity.role} initials={identity.initials} />
         </aside>
 
         <main className="main">
           <div className="mobile-topbar">
-            <Link href="/dashboard" className="mobile-brand">SAUTI<span className="brand-one">1</span><span className="brand-ai">AI</span></Link>
+            <Brand compact href="/dashboard" />
             <div className="mobile-topbar-actions">
               <Link className="mobile-topbar-button" href="/notifications" aria-label="Notifications" title="Notifications">
                 <Bell size={19} />
@@ -131,7 +148,7 @@ export function AppShellClient({ children, identity, attentionCount: initialAtte
           {moreOpen && (
             <>
               <button className="mobile-more-backdrop" aria-label="Close account menu" onClick={() => setMoreOpen(false)} type="button" />
-              <aside className="mobile-more-sheet" aria-label="More navigation">
+              <aside aria-label="More navigation" aria-modal="true" className="mobile-more-sheet" role="dialog">
                 <div className="mobile-more-head">
                   <div>
                     <strong>More</strong>
@@ -141,7 +158,7 @@ export function AppShellClient({ children, identity, attentionCount: initialAtte
                 </div>
                 <nav className="mobile-more-links">
                   {discoverNav.map(({ href, label, icon: Icon }) => (
-                    <Link className={`mobile-more-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch>
+                    <Link className={`mobile-more-link ${isActive(pathname, href) ? "active" : ""}`} href={href} key={href} prefetch={false}>
                       <Icon size={18} strokeWidth={1.85} />
                       <span>{label}</span>
                       {href === "/notifications" && <AttentionBadge count={attentionCount} />}
@@ -157,26 +174,27 @@ export function AppShellClient({ children, identity, attentionCount: initialAtte
           {children}
 
           <nav className="mobile-tabbar" aria-label="Primary navigation">
-            {mobileTabs.map(({ href, label, icon: Icon, primary }) => {
-              const active = primary
-                ? pathname === "/chat" || pathname === "/voice"
-                : isActive(pathname, href);
-
+            {mobileTabs.map(({ href, label, icon: Icon }) => {
+              const active = isActive(pathname, href);
               return (
                 <Link
                   aria-current={active ? "page" : undefined}
-                  className={`mobile-tab ${active ? "active" : ""} ${primary ? "primary" : ""}`}
+                  className={`mobile-tab ${active ? "active" : ""}`}
                   href={href}
                   key={href}
-                  prefetch
+                  prefetch={false}
                 >
-                  <span className="mobile-tab-icon"><Icon size={primary ? 20 : 19} strokeWidth={primary ? 2 : 1.9} /></span>
+                  <span className="mobile-tab-icon"><Icon size={19} strokeWidth={1.9} /></span>
                   <span>{label}</span>
                   {href === "/reports" && <AttentionBadge count={attentionCount} />}
                   <NavigationPendingHint />
                 </Link>
               );
             })}
+            <button aria-expanded={moreOpen} className={`mobile-tab ${moreOpen ? "active" : ""}`} onClick={() => setMoreOpen(true)} type="button">
+              <span className="mobile-tab-icon"><Menu size={19} strokeWidth={1.9} /></span>
+              <span>More</span>
+            </button>
           </nav>
         </main>
       </div>

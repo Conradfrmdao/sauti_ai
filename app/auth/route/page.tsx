@@ -73,7 +73,8 @@ export default async function AuthRoutePage() {
         `
         institution_id,
         role,
-        active
+        active,
+        institutions (status)
       `
       )
       .eq(
@@ -90,6 +91,12 @@ export default async function AuthRoutePage() {
   if (
     institutionMembership
   ) {
+    const institution = Array.isArray(institutionMembership.institutions)
+      ? institutionMembership.institutions[0]
+      : institutionMembership.institutions;
+    if (institution?.status !== "active") {
+      redirect("/workspace-unavailable");
+    }
     redirect(
       "/institution"
     );

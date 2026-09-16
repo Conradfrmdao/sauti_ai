@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isCitizenWorkspace } from "@/lib/auth/workspace";
+import { removeQueuedAttachmentObjects } from "@/lib/sauti1/storage-cleanup";
 import { createClient } from "@/lib/supabase/server";
 
 type CancelTextRequest = {
@@ -71,14 +72,17 @@ export async function POST(request: Request) {
     );
   }
 
-  if (attachmentPaths.length) {
-    const { error: storageError } = await supabase.storage.from("report-attachments").remove(attachmentPaths);
-    if (storageError) console.warn("Discarded text draft but could not remove its storage objects.", storageError.message);
-  }
+  const cleanup = attachmentPaths.length
+    ? await removeQueuedAttachmentObjects(attachmentPaths).catch((cleanupError) => {
+        console.warn("Discarded text draft; attachment cleanup remains queued.", cleanupError);
+        return { pending: true, objectCount: attachmentPaths.length };
+      })
+    : { pending: false, objectCount: 0 };
 
   const result = Array.isArray(data) ? data[0] : data;
   return NextResponse.json({
     cancelled: Boolean(result?.cancelled),
     deletedReportCount: Number(result?.deleted_report_count ?? 0),
+    attachmentCleanupPending: cleanup.pending,
   });
 }

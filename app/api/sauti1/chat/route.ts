@@ -16,6 +16,7 @@ import {
   locationCandidateFromMessage,
   resolveUgandaPlaceOnline,
 } from "@/lib/sauti1/location-resolver";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 type ChatRequest = {
@@ -272,6 +273,7 @@ export async function POST(request: Request) {
   if (!await isCitizenWorkspace(supabase, user.id)) {
     return NextResponse.json({ error: "Citizen AI is not available in this account workspace." }, { status: 403 });
   }
+  const trustedSupabase = createAdminClient();
   mark("authentication");
 
   let conversationId = body.conversationId;
@@ -364,7 +366,7 @@ export async function POST(request: Request) {
         .from("messages")
         .select("sender_type, body")
         .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(30),
       supabase
         .from("profiles")
@@ -380,7 +382,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const transcript = (transcriptResult.data ?? [])
+  const transcriptRows = [...(transcriptResult.data ?? [])].reverse();
+  const newestTranscriptRow = transcriptRows.at(-1);
+  if (newestTranscriptRow?.sender_type === "citizen" && newestTranscriptRow.body === citizenMessage) {
+    transcriptRows.pop();
+  }
+  const transcript = transcriptRows
     .filter((row) => row.sender_type === "citizen" || row.sender_type === "ai")
     .map((row) => ({
       role: row.sender_type === "citizen" ? "user" as const : "assistant" as const,
@@ -501,7 +508,7 @@ export async function POST(request: Request) {
     };
 
     if (reportId) {
-      const { data: updated, error } = await supabase
+      const { data: updated, error } = await trustedSupabase
         .from("reports")
         .update(reportPayload)
         .eq("id", reportId)
@@ -513,7 +520,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error?.message || "The report could not be updated." }, { status: 409 });
       }
     } else {
-      const { data: report, error } = await supabase
+      const { data: report, error } = await trustedSupabase
         .from("reports")
         .insert(reportPayload)
         .select("id")
@@ -544,10 +551,11 @@ export async function POST(request: Request) {
   }
   mark("evidence_persisted");
 
-  const { error: aiMessageError } = await supabase.rpc("append_ai_message", {
-    target_conversation_id: conversationId,
-    message_body: draft.assistantReply,
-    message_metadata: {
+  const { error: aiMessageError } = await trustedSupabase.from("messages").insert({
+    conversation_id: conversationId,
+    sender_type: "ai",
+    body: draft.assistantReply,
+    metadata: {
       report_id: reportId ?? null,
       draft: { ...draft, intakeData: visibleIntakeData(draft.intakeData) },
     },

@@ -1,11 +1,11 @@
 "use client";
 
-import { CheckCircle2, FileCheck2, FileText, Image, MessageSquarePlus, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
+import { CheckCircle2, ChevronUp, FileCheck2, FileText, Image as EvidenceIcon, MessageSquarePlus, Paperclip, Pencil, Send, Trash2, X } from "lucide-react";
 import {
   ChangeEvent,
   FormEvent,
+  useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -88,7 +88,7 @@ const hiddenIntakeFields = new Set([
   "current_location_longitude",
 ]);
 
-function ReportReview({ preview }: { preview: ReportPreview }) {
+function ReportReview({ preview, evidenceCount }: { preview: ReportPreview; evidenceCount: number }) {
   const intakeFacts = Object.entries(preview.intakeData ?? {})
     .filter(([key]) => !hiddenIntakeFields.has(key));
 
@@ -96,19 +96,21 @@ function ReportReview({ preview }: { preview: ReportPreview }) {
     <div className="mobile-report-review">
       <div className="mobile-review-heading">
         <span><FileCheck2 size={17} /></span>
-        <div><small>Ready for your review</small><strong>{preview.title}</strong></div>
+        <div><small>{preview.readyToConfirm ? "Ready for your review" : "Live case in progress"}</small><strong>{preview.title}</strong></div>
       </div>
       <p>{preview.summary || preview.description}</p>
       <dl>
         <div><dt>Institution</dt><dd>{preview.institutionName}</dd></div>
         <div><dt>Category</dt><dd>{statusLabel(preview.category)}</dd></div>
         <div><dt>Priority</dt><dd>{statusLabel(preview.priority)}</dd></div>
+        <div><dt>Source</dt><dd>Web</dd></div>
+        <div><dt>Evidence</dt><dd>{evidenceCount} file{evidenceCount === 1 ? "" : "s"}</dd></div>
         {preview.locationText && <div><dt>Location</dt><dd>{preview.locationText}</dd></div>}
         {intakeFacts.map(([key, value]) => (
           <div key={key}><dt>{intakeFieldLabel(key)}</dt><dd>{value}</dd></div>
         ))}
       </dl>
-      <small className="mobile-review-note">Nothing is submitted until you confirm.</small>
+      <small className="mobile-review-note">{preview.readyToConfirm ? "Nothing is submitted until you confirm." : `${preview.missingFields.length} detail${preview.missingFields.length === 1 ? "" : "s"} still needed.`}</small>
     </div>
   );
 }
@@ -149,32 +151,72 @@ export function ChatView({
   const [chatClosed, setChatClosed] = useState(Boolean(initialTicket));
   const [attachments, setAttachments] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [preparing, setPreparing] = useState(true);
   const [pending, setPending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelConfirming, setCancelConfirming] = useState(false);
+  const [caseOpen, setCaseOpen] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const announcedAcknowledgement = useRef(initialTicket?.ticket_status === "acknowledged");
   const announcedTicketStatus = useRef(initialTicket?.ticket_status);
   const sentInitialPrompt = useRef(false);
 
-  function speak(text: string) {
+  useEffect(() => {
+    const controller = new AbortController();
+    async function prepareConversation() {
+      try {
+        const response = await fetch("/api/sauti1/prepare-text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: initialConversationId,
+            reportId: initialReportId,
+          }),
+          signal: controller.signal,
+        });
+        const payload = await response.json() as { error?: string };
+        if (!response.ok) throw new Error(payload.error || "The text workspace could not be prepared.");
+        if (initialReportId) {
+          window.dispatchEvent(new CustomEvent("sauti1:attention-change", { detail: { delta: -1 } }));
+        }
+      } catch (requestError) {
+        if (!controller.signal.aborted) {
+          setError(requestError instanceof Error ? requestError.message : "The text workspace could not be prepared.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setPreparing(false);
+      }
+    }
+    void prepareConversation();
+    return () => controller.abort();
+  }, [initialConversationId, initialReportId]);
+  useEffect(() => {
+    if (!caseOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setCaseOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [caseOpen]);
+
+  const speak = useCallback((text: string) => {
     if (!voiceMode || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-UG";
     utterance.rate = 1.05;
     window.speechSynthesis.speak(utterance);
-  }
-
-  const confidence = useMemo(
-    () => preview ? `${Math.round(preview.confidence * 100)}%` : "0%",
-    [preview]
-  );
+  }, [voiceMode]);
 
   function chooseAttachments(event: ChangeEvent<HTMLInputElement>) {
     const selected = Array.from(event.target.files ?? []);
@@ -207,12 +249,12 @@ export function ChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, pending]);
 
-  async function submitText(text: string) {
+  const submitText = useCallback(async (text: string) => {
     const filesToUpload = [...attachments];
     const messageText = text || (filesToUpload.length
       ? `Attached ${filesToUpload.map((file) => file.name).join(", ")} as evidence for this report.`
       : "");
-    if (!messageText || pending || uploading || chatClosed) return;
+    if (!messageText || preparing || pending || uploading || chatClosed) return;
 
     const activeReportId = ticket ? undefined : reportId;
     setInput("");
@@ -266,7 +308,7 @@ export function ChatView({
       setUploading(false);
       setPending(false);
     }
-  }
+  }, [attachments, chatClosed, conversationId, pending, preparing, reportId, speak, ticket, uploading, voiceMode]);
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
@@ -274,10 +316,10 @@ export function ChatView({
   }
 
   useEffect(() => {
-    if (!initialPrompt || sentInitialPrompt.current) return;
+    if (!initialPrompt || preparing || sentInitialPrompt.current) return;
     sentInitialPrompt.current = true;
     void submitText(initialPrompt);
-  }, [initialPrompt]);
+  }, [initialPrompt, preparing, submitText]);
 
   async function confirmReport() {
     if (!reportId || submitting || !preview?.readyToConfirm) return;
@@ -360,7 +402,7 @@ export function ChatView({
   }
 
   useEffect(() => {
-    if (!ticket?.ticket_id || ["resolved", "closed", "rejected"].includes(ticket.ticket_status || "")) return;
+    if (!ticket?.ticket_id || ["closed", "cancelled"].includes(ticket.ticket_status || "")) return;
 
     let active = true;
     let timeoutId: number | undefined;
@@ -403,11 +445,13 @@ export function ChatView({
         if (updated.status !== announcedTicketStatus.current) {
           const updateText = updated.status === "in_progress"
             ? latestEvent?.note || `${institutionName} has started working on ${updated.ticket_code}.`
-            : updated.status === "resolved"
-              ? latestEvent?.note || `${institutionName} marked ${updated.ticket_code} as solved.`
-              : updated.status === "closed"
-                ? latestEvent?.note || `${institutionName} closed ${updated.ticket_code}.`
-                : undefined;
+            : updated.status === "resolution_proposed"
+              ? `${latestEvent?.note || `${institutionName} proposed a resolution.`} Open My reports to confirm whether the issue is actually fixed.`
+              : updated.status === "reopened"
+                ? latestEvent?.note || `${updated.ticket_code} was reopened because the issue remains unresolved.`
+                : updated.status === "closed"
+                  ? latestEvent?.note || `${updated.ticket_code} closed after citizen confirmation.`
+                  : undefined;
           announcedTicketStatus.current = updated.status;
           if (updateText) {
             setMessages((current) => [...current, { role: "assistant", text: updateText }]);
@@ -424,7 +468,7 @@ export function ChatView({
       active = false;
       if (timeoutId) window.clearTimeout(timeoutId);
     };
-  }, [preview?.institutionName, ticket?.ticket_id, ticket?.ticket_status]);
+  }, [preview?.institutionName, speak, ticket?.ticket_id, ticket?.ticket_status]);
 
   return (
     <div className="chat-page">
@@ -462,22 +506,6 @@ export function ChatView({
               <div className="message-bubble">
                 {message.text}
 
-                {preview && !ticket && preview.readyToConfirm && index === messages.length - 1 && message.role === "assistant" && (
-                  <>
-                    <ReportReview preview={preview} />
-                    <div className="confirm-row">
-                      <button className="pill-action primary" disabled={submitting} onClick={confirmReport} type="button">
-                        <CheckCircle2 size={15} /> {submitting ? "Submitting..." : "Confirm and submit"}
-                      </button>
-                      <button className="pill-action" onClick={() => inputRef.current?.focus()} type="button">
-                        <Pencil size={15} /> Change details
-                      </button>
-                      <button className="pill-action danger" onClick={() => setCancelConfirming(true)} type="button">
-                        <Trash2 size={15} /> Discard
-                      </button>
-                    </div>
-                  </>
-                )}
               </div>
             </div>
           ))}
@@ -490,6 +518,15 @@ export function ChatView({
           )}
           <div ref={bottomRef} aria-hidden="true" />
         </div>
+
+        {preview && (
+          <button className="mobile-case-trigger" onClick={() => setCaseOpen(true)} type="button">
+            <span><FileCheck2 size={16} /> Live Case</span>
+            <strong>{preview.title}</strong>
+            <small>{preview.readyToConfirm ? "Ready to review" : `${preview.missingFields.length} detail${preview.missingFields.length === 1 ? "" : "s"} needed`}</small>
+            <ChevronUp aria-hidden="true" size={17} />
+          </button>
+        )}
 
         {chatClosed ? (
           <div className="chat-closed-actions" role="status">
@@ -508,7 +545,7 @@ export function ChatView({
               <div className="attachment-strip" aria-label="Files ready to attach">
                 {attachments.map((file, index) => (
                   <div className="attachment-chip" key={`${file.name}-${file.size}-${index}`}>
-                    {file.type === "application/pdf" ? <FileText size={15} /> : <Image size={15} />}
+                    {file.type === "application/pdf" ? <FileText size={15} /> : <EvidenceIcon size={15} />}
                     <span>{file.name}</span>
                     <button
                       aria-label={`Remove ${file.name}`}
@@ -536,22 +573,29 @@ export function ChatView({
               <button
                 className="circle-btn attachment-button"
                 aria-label="Attach screenshots or a PDF"
-                disabled={pending || uploading || attachments.length >= maxAttachments}
+                disabled={preparing || pending || uploading || attachments.length >= maxAttachments}
                 onClick={() => attachmentInputRef.current?.click()}
                 title="Attach screenshots or a PDF"
                 type="button"
               >
                 <Paperclip size={18} />
               </button>
-              <input
+              <textarea
                 ref={inputRef}
                 aria-label="Message Sauti1"
                 autoComplete="off"
-                placeholder={uploading ? "Uploading evidence..." : "Tell Sauti1 what happened..."}
+                disabled={preparing}
+                maxLength={4000}
+                placeholder={preparing ? "Preparing a secure report..." : uploading ? "Uploading evidence..." : "Tell Sauti1 what happened..."}
+                rows={1}
                 value={input}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => {
+                  setInput(event.target.value);
+                  event.currentTarget.style.height = "auto";
+                  event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 144)}px`;
+                }}
               />
-              <button className="circle-btn voice" aria-label="Send message" disabled={pending || uploading || (!input.trim() && attachments.length === 0)} type="submit">
+              <button className="circle-btn voice" aria-label="Send message" disabled={preparing || pending || uploading || (!input.trim() && attachments.length === 0)} type="submit">
                 <Send size={19} />
               </button>
             </form>
@@ -560,17 +604,18 @@ export function ChatView({
       </section>
 
       <aside className="preview">
-        <h2>Report preview</h2>
+        <h2>Live Case</h2>
 
         {preview ? (
           <>
             <div className="preview-card">
-              <div className="preview-eyebrow">AI understanding</div>
+              <div className="preview-eyebrow">Case understanding</div>
               <div className="preview-title">{preview.title}</div>
               <div className="preview-description">{preview.description}</div>
 
               <div className="kv"><span>Institution</span><strong>{preview.institutionName}</strong></div>
-              <div className="kv"><span>Confidence</span><span className="confidence">{confidence}</span></div>
+              <div className="kv"><span>Source</span><strong>Web</strong></div>
+              <div className="kv"><span>Evidence</span><strong>{attachments.length} file{attachments.length === 1 ? "" : "s"}</strong></div>
               <div className="kv"><span>Priority</span><strong>{statusLabel(preview.priority)}</strong></div>
               <div className="kv"><span>Category</span><strong>{statusLabel(preview.category)}</strong></div>
               <div className="kv"><span>Location</span><strong>{preview.locationText || "Not required / not provided"}</strong></div>
@@ -596,15 +641,19 @@ export function ChatView({
               )}
             </div>
 
-            <div className={`preview-status ${["acknowledged", "in_progress", "resolved", "closed"].includes(ticket?.ticket_status || "") ? "acknowledged" : ""}`}>
+            <div className={`preview-status ${["acknowledged", "assigned", "in_progress", "resolution_proposed", "reopened", "resolved_confirmed", "closed"].includes(ticket?.ticket_status || "") ? "acknowledged" : ""}`}>
               {ticket
-                ? ticket.ticket_status === "resolved" || ticket.ticket_status === "closed"
-                  ? <><CheckCircle2 size={16} /> {ticket.institution_name || preview.institutionName} marked this ticket as solved.</>
-                  : ticket.ticket_status === "in_progress"
-                    ? <><CheckCircle2 size={16} /> {ticket.institution_name || preview.institutionName} is working on this ticket.</>
-                    : ticket.ticket_status === "acknowledged"
-                      ? <><CheckCircle2 size={16} /> {ticket.institution_name || preview.institutionName} acknowledged this ticket.</>
-                      : <>Submitted to {ticket.institution_name || preview.institutionName}. Waiting for acknowledgement.</>
+                ? ticket.ticket_status === "closed"
+                  ? <><CheckCircle2 size={16} /> Closed after citizen confirmation.</>
+                  : ticket.ticket_status === "resolution_proposed"
+                    ? <><CheckCircle2 size={16} /> Resolution proposed. Confirm the outcome in My reports.</>
+                    : ticket.ticket_status === "reopened"
+                      ? <><CheckCircle2 size={16} /> Reopened for further institution action.</>
+                      : ticket.ticket_status === "in_progress"
+                        ? <><CheckCircle2 size={16} /> {ticket.institution_name || preview.institutionName} is working on this ticket.</>
+                        : ticket.ticket_status === "acknowledged" || ticket.ticket_status === "assigned"
+                          ? <><CheckCircle2 size={16} /> {ticket.institution_name || preview.institutionName} acknowledged this ticket.</>
+                          : <>Submitted to {ticket.institution_name || preview.institutionName}. Waiting for acknowledgement.</>
                 : preview.readyToConfirm
                   ? "Nothing is submitted until you confirm these details."
                   : "Continue the conversation so Sauti1 can complete the report."}
@@ -625,6 +674,17 @@ export function ChatView({
           </div>
         )}
       </aside>
+
+      {caseOpen && preview && (
+        <>
+          <button aria-label="Close Live Case" className="mobile-case-backdrop" onClick={() => setCaseOpen(false)} type="button" />
+          <section aria-label="Live Case" aria-modal="true" className="mobile-case-sheet" role="dialog">
+            <header><div><span>Live Case</span><strong>Review what SAUTI1 understands</strong></div><button aria-label="Close Live Case" onClick={() => setCaseOpen(false)} type="button"><X size={19} /></button></header>
+            <ReportReview evidenceCount={attachments.length} preview={preview} />
+            {!ticket && <div className="mobile-case-actions">{preview.readyToConfirm && <button className="pill-action primary" disabled={submitting} onClick={confirmReport} type="button"><CheckCircle2 size={15} /> {submitting ? "Submitting..." : "Confirm and submit"}</button>}<button className="pill-action" onClick={() => { setCaseOpen(false); inputRef.current?.focus(); }} type="button"><Pencil size={15} /> Change details</button><button className="pill-action danger" onClick={() => { setCaseOpen(false); setCancelConfirming(true); }} type="button"><Trash2 size={15} /> Discard</button></div>}
+          </section>
+        </>
+      )}
     </div>
   );
 }

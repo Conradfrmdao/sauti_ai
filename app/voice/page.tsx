@@ -32,9 +32,6 @@ export default async function VoicePage() {
   const staleIds = rows
     .filter((item) => (item.reports ?? []).some((report) => !["draft", "pending_confirmation"].includes(report.status)))
     .map((item) => item.id);
-  if (staleIds.length) {
-    await supabase.from("conversations").update({ status: "closed", ended_at: new Date().toISOString() }).eq("user_id", user.id).in("id", staleIds);
-  }
   const conversation = rows.find((item) => !staleIds.includes(item.id));
 
   let initialMessages: ChatMessage[] | undefined;
@@ -91,25 +88,6 @@ export default async function VoicePage() {
           phone: citizenProfile?.phone,
         })
         : [];
-      const intakeChanged = JSON.stringify(intakeData) !== JSON.stringify(report.intake_data ?? {});
-      if (
-        detectedCategory !== report.detected_category ||
-        cleanedDescription !== report.description ||
-        normalizedLocation !== report.location_text ||
-        intakeChanged
-      ) {
-        await supabase
-          .from("reports")
-          .update({
-            detected_category: detectedCategory,
-            description: cleanedDescription,
-            location_text: normalizedLocation,
-            intake_data: intakeData,
-          })
-          .eq("id", report.id)
-          .eq("user_id", user.id)
-          .in("status", ["draft", "pending_confirmation"]);
-      }
       initialReportId = report.id;
       initialPreview = {
         title: matchedService?.name || titleFromCategory(detectedCategory),
